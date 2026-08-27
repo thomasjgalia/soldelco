@@ -1,4 +1,4 @@
 export const EXTERNAL_LINKS = {
-	golf: 'https://golf.filiilibertatis.com',
+	golf: 'https://golf.soldelco.com',
 	cornhole: 'https://cornhole.soldelco.com',
 };
