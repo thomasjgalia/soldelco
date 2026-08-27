@@ -1,0 +1,48 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const { results: events } = await env.DB.prepare(
+	`SELECT events.id, events.slug, events.title, events.starts_at,
+		(SELECT COUNT(*) FROM rsvp_forms WHERE rsvp_forms.event_id = events.id) as form_count
+	 FROM events
+	 ORDER BY events.starts_at DESC`,
+).all<{ id: number; slug: string; title: string; starts_at: string | null; form_count: number }>();
+---
+
+<Layout title="Manage events">
+	<h1 class="page-title">Events</h1>
+
+	<form method="POST" action="/api/admin/events" class="form-stack mb-8">
+		<input type="text" name="title" required placeholder="Event title (e.g. Spring 2027 Weekend)" class="field" />
+		<input type="text" name="location" placeholder="Location (optional)" class="field" />
+		<label class="field-label">
+			Starts
+			<input type="date" name="starts_at" class="field mt-1" />
+		</label>
+		<label class="field-label">
+			Ends
+			<input type="date" name="ends_at" class="field mt-1" />
+		</label>
+		<button type="submit" class="btn">Create event</button>
+	</form>
+
+	<ul class="flex flex-col divide-y divide-stone-200">
+		{
+			events.map((event) => (
+				<li class="py-3 flex items-center justify-between">
+					<a href={`/admin/events/${event.id}`} class="font-medium hover:underline">
+						{event.title}
+					</a>
+					<span class="text-sm text-stone-500">{event.form_count} RSVP form{event.form_count === 1 ? '' : 's'}</span>
+				</li>
+			))
+		}
+		{events.length === 0 && <li class="py-3 text-stone-500">No events yet.</li>}
+	</ul>
+</Layout>

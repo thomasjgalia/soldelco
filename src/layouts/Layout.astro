@@ -1,0 +1,138 @@
+---
+import '../styles/global.css';
+import { EXTERNAL_LINKS } from '../config/site';
+import { isAdmin } from '../lib/admin';
+
+interface Props {
+	title?: string;
+}
+
+const { title } = Astro.props;
+const identity = Astro.locals.identity;
+const admin = identity ? await isAdmin(identity.memberId) : false;
+const pageTitle = title ? `${title} · SOL` : 'SOL';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="alternate icon" href="/favicon.ico" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<meta name="theme-color" content="#B31942" />
+		<title>{pageTitle}</title>
+	</head>
+	<body class="min-h-dvh bg-stone-50 text-stone-900 flex flex-col">
+		<header class="relative z-50 bg-flag-red">
+			<div class="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between gap-4">
+				<a href="/" class="flex items-center gap-2 text-lg font-bold tracking-tight text-white">
+					<svg viewBox="0 0 64 64" width="24" height="24" fill="currentColor" aria-hidden="true">
+						<circle cx="32" cy="25" r="13" />
+						<circle cx="19" cy="31" r="10" />
+						<circle cx="45" cy="31" r="10" />
+						<circle cx="32" cy="35" r="11" />
+						<polygon points="28,37 36,37 34,57 30,57" />
+						<polygon points="25,57 39,57 41,60 23,60" />
+					</svg>
+					SOL
+				</a>
+
+				<button
+					id="nav-toggle"
+					type="button"
+					class="sm:hidden -mr-2 p-2 text-white"
+					aria-label="Menu"
+					aria-expanded="false"
+					aria-controls="site-nav"
+				>
+					<svg
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						class="pointer-events-none"
+					>
+						<line x1="3" y1="6" x2="21" y2="6"></line>
+						<line x1="3" y1="12" x2="21" y2="12"></line>
+						<line x1="3" y1="18" x2="21" y2="18"></line>
+					</svg>
+				</button>
+
+				<nav
+					id="site-nav"
+					class="hidden flex-col gap-1 absolute inset-x-0 top-full border-b border-stone-200 bg-white px-4 py-3 shadow-md sm:static sm:flex sm:flex-row sm:items-center sm:gap-4 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none text-sm font-medium"
+				>
+					<a href="/albums" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Albums</a>
+					<a href="/events" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Events</a>
+					<a href="/records" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Records</a>
+					<a
+						href={EXTERNAL_LINKS.golf}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
+					>
+						Golf
+					</a>
+					<a
+						href={EXTERNAL_LINKS.cornhole}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
+					>
+						Cornhole
+					</a>
+					{admin && (
+						<a href="/admin" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">
+							Admin
+						</a>
+					)}
+				</nav>
+			</div>
+		</header>
+
+		<main class="flex-1 mx-auto w-full max-w-3xl px-4 py-6">
+			<slot />
+		</main>
+
+		<footer class="border-t border-stone-200 bg-white">
+			<div class="mx-auto max-w-3xl px-4 py-3 text-sm text-stone-500 flex items-center justify-between">
+				{
+					identity ? (
+						<span>
+							Hi, {identity.displayName} ·{' '}
+							<a href="/whoami" class="underline">
+								not you?
+							</a>
+						</span>
+					) : (
+						<a href="/whoami" class="font-medium text-navy underline">
+							Who are you?
+						</a>
+					)
+				}
+			</div>
+		</footer>
+	</body>
+</html>
+
+<script>
+	function initNavToggle() {
+		const toggle = document.getElementById('nav-toggle');
+		const nav = document.getElementById('site-nav');
+		toggle?.addEventListener('click', () => {
+			const nowHidden = nav?.classList.toggle('hidden');
+			nav?.classList.toggle('flex', !nowHidden);
+			toggle.setAttribute('aria-expanded', String(!nowHidden));
+		});
+	}
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initNavToggle);
+	} else {
+		initNavToggle();
+	}
+</script>

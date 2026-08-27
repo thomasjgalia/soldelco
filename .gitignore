@@ -16,6 +16,20 @@ pnpm-debug.log*
 # environment variables
 .env
 .env.production
+.dev.vars
+
+# raw Cloudinary export (migrated to R2, not committed)
+photoscloudinary/
+
+# player roster export (has emails/phone numbers, not committed)
+players-export.csv
+
+# one-time Cloudinary migration input (source of truth becomes D1 after migration)
+scripts/cloudinary-albums.json
+scripts/generated-migration.sql
+
+# wrangler local state
+.wrangler/
 
 # macOS-specific files
 .DS_Store

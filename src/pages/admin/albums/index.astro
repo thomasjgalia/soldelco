@@ -1,0 +1,40 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const { results: albums } = await env.DB.prepare(
+	`SELECT albums.id, albums.slug, albums.title, COUNT(photos.id) as photo_count
+	 FROM albums
+	 LEFT JOIN photos ON photos.album_id = albums.id
+	 GROUP BY albums.id
+	 ORDER BY albums.created_at DESC`,
+).all<{ id: number; slug: string; title: string; photo_count: number }>();
+---
+
+<Layout title="Manage albums">
+	<h1 class="page-title">Albums</h1>
+
+	<form method="POST" action="/api/admin/albums" class="form-stack mb-8">
+		<input type="text" name="title" required placeholder="Album title" class="field" />
+		<button type="submit" class="btn">Create album</button>
+	</form>
+
+	<ul class="flex flex-col divide-y divide-stone-200">
+		{
+			albums.map((album) => (
+				<li class="py-3 flex items-center justify-between">
+					<a href={`/admin/albums/${album.id}`} class="font-medium hover:underline">
+						{album.title}
+					</a>
+					<span class="text-sm text-stone-500">{album.photo_count} photos</span>
+				</li>
+			))
+		}
+		{albums.length === 0 && <li class="py-3 text-stone-500">No albums yet.</li>}
+	</ul>
+</Layout>

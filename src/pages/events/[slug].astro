@@ -1,0 +1,160 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { sortTeams, winningTeams, type Team } from '../../lib/results';
+
+const { slug } = Astro.params;
+const identity = Astro.locals.identity;
+
+const event = await env.DB.prepare('SELECT id, title, description, location, starts_at, ends_at FROM events WHERE slug = ?')
+	.bind(slug)
+	.first<{
+		id: number;
+		title: string;
+		description: string | null;
+		location: string | null;
+		starts_at: string | null;
+		ends_at: string | null;
+	}>();
+
+if (!event) return Astro.redirect('/events');
+
+const { results: albums } = await env.DB.prepare('SELECT slug, title FROM albums WHERE event_id = ?')
+	.bind(event.id)
+	.all<{ slug: string; title: string }>();
+
+const { results: rawForms } = await env.DB.prepare(
+	'SELECT id, title, closes_at FROM rsvp_forms WHERE event_id = ? ORDER BY created_at',
+)
+	.bind(event.id)
+	.all<{ id: number; title: string; closes_at: string | null }>();
+
+const forms = await Promise.all(
+	rawForms.map(async (form) => {
+		const existing = identity
+			? await env.DB.prepare('SELECT attending FROM rsvp_responses WHERE form_id = ? AND member_id = ?')
+					.bind(form.id, identity.memberId)
+					.first<{ attending: string | null }>()
+			: null;
+		const closed = form.closes_at ? new Date(form.closes_at) < new Date() : false;
+		return { ...form, attending: existing?.attending ?? null, closed };
+	}),
+);
+
+const { results: rawCompetitions } = await env.DB.prepare(
+	'SELECT id, kind, title FROM competitions WHERE event_id = ? ORDER BY played_on',
+)
+	.bind(event.id)
+	.all<{ id: number; kind: string; title: string }>();
+
+const competitions = await Promise.all(
+	rawCompetitions.map(async (c) => {
+		const { results: teams } = await env.DB.prepare('SELECT id, competition_id, name, score, placement FROM teams WHERE competition_id = ?')
+			.bind(c.id)
+			.all<Team>();
+		const { results: teamMembers } = await env.DB.prepare(
+			`SELECT team_members.team_id, members.display_name
+			 FROM team_members JOIN members ON members.id = team_members.member_id
+			 WHERE team_members.team_id IN (SELECT id FROM teams WHERE competition_id = ?)`,
+		)
+			.bind(c.id)
+			.all<{ team_id: number; display_name: string }>();
+
+		const rosterByTeam = new Map<number, string[]>();
+		for (const tm of teamMembers) {
+			if (!rosterByTeam.has(tm.team_id)) rosterByTeam.set(tm.team_id, []);
+			rosterByTeam.get(tm.team_id)!.push(tm.display_name);
+		}
+
+		const sorted = sortTeams(teams);
+		const winnerIds = new Set(winningTeams(teams).map((t) => t.id));
+		return { ...c, isGolf: c.kind === 'golf_scramble', teams: sorted, rosterByTeam, winnerIds };
+	}),
+);
+---
+
+<Layout title={event.title}>
+	<a href="/events" class="link-muted">&larr; All events</a>
+	<h1 class="text-2xl font-bold mt-1 mb-1">{event.title}</h1>
+	<p class="text-sm text-stone-500 mb-1">
+		{event.starts_at}
+		{event.ends_at && event.ends_at !== event.starts_at && ` – ${event.ends_at}`}
+		{event.location && ` · ${event.location}`}
+	</p>
+	{event.description && <p class="text-stone-600 mb-4">{event.description}</p>}
+
+	{
+		albums.length > 0 && (
+			<div class="mb-6">
+				<h2 class="section-title">Photos</h2>
+				<ul class="flex flex-col gap-1">
+					{albums.map((album) => (
+						<li>
+							<a href={`/albums/${album.slug}`} class="link">
+								{album.title}
+							</a>
+						</li>
+					))}
+				</ul>
+			</div>
+		)
+	}
+
+	{
+		competitions.map((c) => (
+			<div class="mb-6">
+				<h2 class="section-title">{c.title}</h2>
+				{c.teams.length === 0 ? (
+					<p class="text-stone-500 text-sm">Results not entered yet.</p>
+				) : (
+					<ul class="flex flex-col divide-y divide-stone-200 max-w-sm">
+						{c.teams.map((team) => (
+							<li class="py-2 flex items-center justify-between gap-4">
+								<div>
+									<p class="font-medium">
+										{team.name} {c.winnerIds.has(team.id) && '🏆'}
+									</p>
+									<p class="text-xs text-stone-500">{(c.rosterByTeam.get(team.id) ?? []).join(', ')}</p>
+								</div>
+								<span class="text-sm text-stone-500 shrink-0">{c.isGolf ? team.score : `#${team.placement}`}</span>
+							</li>
+						))}
+					</ul>
+				)}
+			</div>
+		))
+	}
+
+	{
+		forms.map((form) => (
+			<div class="mb-8 max-w-sm">
+				<h2 class="section-title">{form.title}</h2>
+				{form.closed ? (
+					<p class="text-stone-500 text-sm">RSVPs are closed.</p>
+				) : !identity ? (
+					<p class="text-stone-500 text-sm">
+						<a href={`/whoami?redirect=/events/${slug}`} class="link">
+							Pick your name
+						</a>{' '}
+						to RSVP.
+					</p>
+				) : (
+					<div class="flex gap-2">
+						<form method="POST" action={`/api/rsvp/${form.id}`} class="flex-1">
+							<input type="hidden" name="attending" value="yes" />
+							<button type="submit" class={form.attending === 'yes' ? 'btn w-full' : 'btn-outline w-full'}>
+								Yes, I'm in
+							</button>
+						</form>
+						<form method="POST" action={`/api/rsvp/${form.id}`} class="flex-1">
+							<input type="hidden" name="attending" value="no" />
+							<button type="submit" class={form.attending === 'no' ? 'btn w-full' : 'btn-outline w-full'}>
+								Can't make it
+							</button>
+						</form>
+					</div>
+				)}
+			</div>
+		))
+	}
+</Layout>

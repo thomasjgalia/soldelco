@@ -1,0 +1,16 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { isAdmin } from '../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+---
+
+<Layout title="Admin">
+	<h1 class="page-title">Admin</h1>
+	<ul class="flex flex-col gap-2">
+		<li><a href="/admin/albums" class="link">Manage albums &amp; photos</a></li>
+		<li><a href="/admin/events" class="link">Manage events &amp; RSVP forms</a></li>
+	</ul>
+</Layout>

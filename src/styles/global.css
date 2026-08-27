@@ -1,1 +1,71 @@
 @import "tailwindcss";
+
+/*
+ * Brand colors — the official US flag hex values, so "navy" and "red"
+ * read as flag colors rather than generic Tailwind blue/red.
+ */
+@theme {
+	--color-navy: #0a3161;
+	--color-navy-dark: #071f3f;
+	--color-flag-red: #b31942;
+	--color-flag-red-dark: #8f1435;
+}
+
+/*
+ * Shared look-and-feel tokens. Change a value here and it updates
+ * everywhere the class is used — pages should not hardcode raw
+ * Tailwind utility strings for buttons, inputs, or headings.
+ *
+ * Theme: navy as the primary/interactive color, a restrained flag-red
+ * accent for emphasis and destructive actions, neutral (stone/white)
+ * surfaces everywhere else so photos stay the visual focus.
+ */
+@layer components {
+	.page-title {
+		@apply text-2xl font-bold mb-4;
+	}
+
+	.section-title {
+		@apply text-lg font-bold mb-2;
+	}
+
+	.field-label {
+		@apply text-sm text-stone-600;
+	}
+
+	.field {
+		@apply w-full rounded-lg border border-stone-300 px-3 py-2 focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy;
+	}
+
+	.field-lg {
+		@apply w-full rounded-lg border border-stone-300 px-4 py-3 text-lg text-center focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy;
+	}
+
+	.btn {
+		@apply rounded-lg bg-navy text-white py-2 font-medium text-center hover:bg-navy-dark;
+	}
+
+	.btn-lg {
+		@apply rounded-lg bg-navy text-white py-3 font-medium text-center hover:bg-navy-dark;
+	}
+
+	.btn-outline {
+		@apply rounded-lg border border-stone-300 py-3 font-medium text-center hover:border-navy hover:bg-navy/5;
+	}
+
+	.link {
+		@apply text-navy underline hover:text-navy-dark;
+	}
+
+	.link-muted {
+		@apply text-sm text-stone-500 hover:underline;
+	}
+
+	.link-danger {
+		@apply text-sm text-flag-red hover:underline;
+	}
+
+	.form-stack {
+		@apply flex max-w-sm flex-col gap-3;
+	}
+}

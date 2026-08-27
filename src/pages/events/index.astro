@@ -1,0 +1,29 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+
+const { results: events } = await env.DB.prepare(
+	'SELECT id, slug, title, location, starts_at, ends_at FROM events ORDER BY starts_at DESC',
+).all<{ id: number; slug: string; title: string; location: string | null; starts_at: string | null; ends_at: string | null }>();
+---
+
+<Layout title="Events">
+	<h1 class="page-title">Events</h1>
+
+	<ul class="flex flex-col divide-y divide-stone-200">
+		{
+			events.map((event) => (
+				<li class="py-3">
+					<a href={`/events/${event.slug}`} class="font-medium hover:underline">
+						{event.title}
+					</a>
+					<p class="text-sm text-stone-500">
+						{event.starts_at}
+						{event.location && ` · ${event.location}`}
+					</p>
+				</li>
+			))
+		}
+		{events.length === 0 && <p class="text-stone-500">No events yet.</p>}
+	</ul>
+</Layout>

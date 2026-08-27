@@ -1,0 +1,104 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { winningTeams, type Team } from '../../lib/results';
+
+const { results: events } = await env.DB.prepare('SELECT id, slug, title, starts_at FROM events ORDER BY starts_at DESC').all<{
+	id: number;
+	slug: string;
+	title: string;
+	starts_at: string | null;
+}>();
+
+const { results: competitions } = await env.DB.prepare('SELECT id, event_id, kind, title FROM competitions').all<{
+	id: number;
+	event_id: number;
+	kind: string;
+	title: string;
+}>();
+
+const { results: teams } = await env.DB.prepare('SELECT id, competition_id, name, score, placement FROM teams').all<Team>();
+
+const { results: teamMembers } = await env.DB.prepare('SELECT team_id, member_id FROM team_members').all<{
+	team_id: number;
+	member_id: number;
+}>();
+
+const { results: members } = await env.DB.prepare('SELECT id, display_name FROM members').all<{ id: number; display_name: string }>();
+
+const memberById = new Map(members.map((m) => [m.id, m]));
+const teamsByCompetition = new Map<number, Team[]>();
+for (const t of teams) {
+	if (!teamsByCompetition.has(t.competition_id)) teamsByCompetition.set(t.competition_id, []);
+	teamsByCompetition.get(t.competition_id)!.push(t);
+}
+const membersByTeam = new Map<number, number[]>();
+for (const tm of teamMembers) {
+	if (!membersByTeam.has(tm.team_id)) membersByTeam.set(tm.team_id, []);
+	membersByTeam.get(tm.team_id)!.push(tm.member_id);
+}
+const competitionsByEvent = new Map<number, typeof competitions>();
+for (const c of competitions) {
+	if (!competitionsByEvent.has(c.event_id)) competitionsByEvent.set(c.event_id, []);
+	competitionsByEvent.get(c.event_id)!.push(c);
+}
+
+const wins = new Map<number, number>();
+for (const c of competitions) {
+	for (const team of winningTeams(teamsByCompetition.get(c.id) ?? [])) {
+		for (const memberId of membersByTeam.get(team.id) ?? []) {
+			wins.set(memberId, (wins.get(memberId) ?? 0) + 1);
+		}
+	}
+}
+
+const leaderboard = [...wins.entries()]
+	.map(([memberId, count]) => ({ member: memberById.get(memberId), wins: count }))
+	.filter((row) => row.member)
+	.sort((a, b) => b.wins - a.wins);
+
+function winnerNames(competitionId: number): string {
+	const winners = winningTeams(teamsByCompetition.get(competitionId) ?? []);
+	return winners.map((t) => t.name).join(', ') || 'Not entered yet';
+}
+---
+
+<Layout title="Records">
+	<h1 class="page-title">Records</h1>
+
+	<h2 class="section-title">All-time leaderboard</h2>
+	<ul class="flex flex-col divide-y divide-stone-200 mb-8 max-w-sm">
+		{
+			leaderboard.map((row) => (
+				<li class="py-2 flex items-center justify-between">
+					<span>{row.member!.display_name}</span>
+					<span class="text-sm text-stone-500">
+						<span class="font-semibold text-flag-red">{row.wins}</span> win{row.wins === 1 ? '' : 's'}
+					</span>
+				</li>
+			))
+		}
+		{leaderboard.length === 0 && <li class="py-2 text-stone-500 text-sm">No results entered yet.</li>}
+	</ul>
+
+	<h2 class="section-title">By weekend</h2>
+	<ul class="flex flex-col divide-y divide-stone-200 max-w-sm">
+		{
+			events.map((event) => (
+				<li class="py-3">
+					<a href={`/events/${event.slug}`} class="link font-medium">
+						{event.title}
+					</a>
+					<ul class="mt-1">
+						{(competitionsByEvent.get(event.id) ?? []).map((c) => (
+							<li class="text-sm text-stone-600">
+								{c.title}: <span class="font-medium">{winnerNames(c.id)}</span>
+							</li>
+						))}
+					</ul>
+				</li>
+			))
+		}
+		{events.length === 0 && <li class="py-2 text-stone-500 text-sm">No events yet.</li>}
+	</ul>
+</Layout>

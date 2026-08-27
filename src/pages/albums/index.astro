@@ -1,0 +1,31 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+
+const { results: albums } = await env.DB.prepare(
+	`SELECT albums.id, albums.slug, albums.title,
+		(SELECT r2_key FROM photos WHERE photos.album_id = albums.id AND photos.kind = 'image' ORDER BY created_at ASC LIMIT 1) as cover_key
+	 FROM albums
+	 ORDER BY albums.created_at DESC`,
+).all<{ id: number; slug: string; title: string; cover_key: string | null }>();
+---
+
+<Layout title="Albums">
+	<h1 class="page-title">Albums</h1>
+
+	<div class="grid grid-cols-2 gap-3">
+		{
+			albums.map((album) => (
+				<a href={`/albums/${album.slug}`} class="block">
+					<div class="aspect-square bg-stone-200 rounded-lg overflow-hidden mb-1">
+						{album.cover_key && (
+							<img src={`/img/${album.cover_key}?w=400`} alt={album.title} class="w-full h-full object-cover" loading="lazy" />
+						)}
+					</div>
+					<p class="text-sm font-medium">{album.title}</p>
+				</a>
+			))
+		}
+		{albums.length === 0 && <p class="text-stone-500">No albums yet.</p>}
+	</div>
+</Layout>

@@ -1,0 +1,118 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../../lib/admin';
+import { sortTeams, winningTeams, type Team } from '../../../lib/results';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const id = Number(Astro.params.id);
+const competition = await env.DB.prepare(
+	'SELECT competitions.id, competitions.kind, competitions.title, competitions.event_id, events.title as event_title FROM competitions JOIN events ON events.id = competitions.event_id WHERE competitions.id = ?',
+)
+	.bind(id)
+	.first<{ id: number; kind: string; title: string; event_id: number; event_title: string }>();
+
+if (!competition) return Astro.redirect('/admin/events');
+
+const { results: teams } = await env.DB.prepare('SELECT id, competition_id, name, score, placement FROM teams WHERE competition_id = ?')
+	.bind(id)
+	.all<Team>();
+
+const { results: teamMembers } = await env.DB.prepare(
+	`SELECT team_members.team_id, members.display_name
+	 FROM team_members JOIN members ON members.id = team_members.member_id
+	 WHERE team_members.team_id IN (SELECT id FROM teams WHERE competition_id = ?)`,
+)
+	.bind(id)
+	.all<{ team_id: number; display_name: string }>();
+
+const rosterByTeam = new Map<number, string[]>();
+for (const tm of teamMembers) {
+	if (!rosterByTeam.has(tm.team_id)) rosterByTeam.set(tm.team_id, []);
+	rosterByTeam.get(tm.team_id)!.push(tm.display_name);
+}
+
+const sorted = sortTeams(teams);
+const winners = new Set(winningTeams(teams).map((t) => t.id));
+
+const { results: members } = await env.DB.prepare(
+	"SELECT id, display_name FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+).all<{ id: number; display_name: string }>();
+
+const isGolf = competition.kind === 'golf_scramble';
+---
+
+<Layout title={competition.title}>
+	<a href={`/admin/events/${competition.event_id}`} class="link-muted">
+		&larr; {competition.event_title}
+	</a>
+	<h1 class="page-title mt-1">{competition.title}</h1>
+
+	<table class="min-w-full text-sm border-collapse mb-6">
+		<thead>
+			<tr class="border-b border-stone-300 text-left">
+				<th class="py-2 pr-4">Team</th>
+				<th class="py-2 pr-4">Roster</th>
+				<th class="py-2 pr-4">{isGolf ? 'Score' : 'Placement'}</th>
+				<th class="py-2 pr-4" />
+			</tr>
+		</thead>
+		<tbody>
+			{
+				sorted.map((team) => (
+					<tr class="border-b border-stone-200">
+						<td class="py-2 pr-4 font-medium">
+							{team.name} {winners.has(team.id) && '🏆'}
+						</td>
+						<td class="py-2 pr-4">{(rosterByTeam.get(team.id) ?? []).join(', ')}</td>
+						<td class="py-2 pr-4">{isGolf ? team.score : team.placement}</td>
+						<td class="py-2 pr-4">
+							<form method="POST" action={`/api/admin/teams/${team.id}/delete`}>
+								<button type="submit" class="link-danger text-xs">
+									delete
+								</button>
+							</form>
+						</td>
+					</tr>
+				))
+			}
+			{sorted.length === 0 && (
+				<tr>
+					<td class="py-4 text-stone-500" colspan="4">
+						No teams yet.
+					</td>
+				</tr>
+			)}
+		</tbody>
+	</table>
+
+	<details class="max-w-sm mb-8">
+		<summary class="cursor-pointer text-stone-600 underline mb-3">Add team</summary>
+		<form method="POST" action={`/api/admin/competitions/${competition.id}/teams`} class="flex flex-col gap-3">
+			<input type="text" name="name" required placeholder="Team name" class="field" />
+			<label class="field-label">
+				{isGolf ? 'Final score' : 'Placement (1 = 1st)'}
+				<input type="number" name={isGolf ? 'score' : 'placement'} required class="field mt-1" />
+			</label>
+			<fieldset class="flex flex-col gap-1">
+				<legend class="field-label mb-1">Roster</legend>
+				{
+					members.map((m) => (
+						<label class="flex items-center gap-2 text-sm">
+							<input type="checkbox" name="memberIds" value={m.id} />
+							{m.display_name}
+						</label>
+					))
+				}
+			</fieldset>
+			<button type="submit" class="btn">Add team</button>
+		</form>
+	</details>
+
+	<form method="POST" action={`/api/admin/competitions/${competition.id}/delete`}>
+		<button type="submit" class="link-danger">Delete this competition</button>
+	</form>
+</Layout>

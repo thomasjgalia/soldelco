@@ -1,0 +1,35 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"compatibility_date": "2026-08-25",
+	"compatibility_flags": ["global_fetch_strictly_public"],
+	"name": "soldelco",
+	"main": "@astrojs/cloudflare/entrypoints/server",
+	"assets": {
+		"directory": "./dist",
+		"binding": "ASSETS"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"routes": [
+		{ "pattern": "soldelco.com", "custom_domain": true },
+		{ "pattern": "www.soldelco.com", "custom_domain": true }
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "soldelco",
+			"database_id": "0b83ed0c-9d10-4292-8edc-45da52c7b069",
+			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "PHOTOS",
+			"bucket_name": "soldelco-photos"
+		}
+	],
+	"images": {
+		"binding": "IMAGES"
+	}
+}

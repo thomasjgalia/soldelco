@@ -1,0 +1,108 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+
+const { slug } = Astro.params;
+const album = await env.DB.prepare('SELECT id, title, description FROM albums WHERE slug = ?')
+	.bind(slug)
+	.first<{ id: number; title: string; description: string | null }>();
+
+if (!album) return Astro.redirect('/albums');
+
+const { results: photos } = await env.DB.prepare(
+	'SELECT id, r2_key, kind, caption FROM photos WHERE album_id = ? ORDER BY created_at ASC',
+)
+	.bind(album.id)
+	.all<{ id: number; r2_key: string; kind: string; caption: string | null }>();
+
+const images = photos.filter((p) => p.kind === 'image');
+---
+
+<Layout title={album.title}>
+	<a href="/albums" class="link-muted">&larr; All albums</a>
+	<h1 class="page-title mt-1">{album.title}</h1>
+	{album.description && <p class="text-stone-600 mb-4">{album.description}</p>}
+
+	<div class="columns-2 sm:columns-3 gap-2 mt-4">
+		{
+			photos.map((photo) =>
+				photo.kind === 'image' ? (
+					<button
+						type="button"
+						class="photo-thumb mb-2 block w-full break-inside-avoid"
+						data-full={`/img/${photo.r2_key}?w=1400`}
+						data-index={images.findIndex((p) => p.id === photo.id)}
+					>
+						<img src={`/img/${photo.r2_key}?w=400`} alt={photo.caption ?? ''} class="w-full rounded" loading="lazy" />
+					</button>
+				) : (
+					<video src={`/img/${photo.r2_key}`} controls preload="none" class="mb-2 w-full break-inside-avoid rounded bg-black" />
+				),
+			)
+		}
+		{photos.length === 0 && <p class="text-stone-500">No photos yet.</p>}
+	</div>
+
+	<div id="lightbox" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-50" role="dialog" aria-hidden="true">
+		<button type="button" id="lightbox-close" class="absolute top-4 right-4 text-white text-2xl leading-none" aria-label="Close">
+			&times;
+		</button>
+		<button
+			type="button"
+			id="lightbox-prev"
+			class="absolute left-2 top-1/2 -translate-y-1/2 text-white text-3xl px-2"
+			aria-label="Previous"
+		>
+			&#8249;
+		</button>
+		<img id="lightbox-img" src="" alt="" class="max-h-[90vh] max-w-[92vw] object-contain" />
+		<button
+			type="button"
+			id="lightbox-next"
+			class="absolute right-2 top-1/2 -translate-y-1/2 text-white text-3xl px-2"
+			aria-label="Next"
+		>
+			&#8250;
+		</button>
+	</div>
+</Layout>
+
+<script>
+	const thumbs = Array.from(document.querySelectorAll<HTMLButtonElement>('.photo-thumb'));
+	const urls = thumbs.map((t) => t.dataset.full!);
+	const lightbox = document.getElementById('lightbox')!;
+	const img = document.getElementById('lightbox-img') as HTMLImageElement;
+	let current = 0;
+
+	function show(index: number) {
+		current = (index + urls.length) % urls.length;
+		img.src = urls[current];
+		lightbox.classList.remove('hidden');
+		lightbox.classList.add('flex');
+		lightbox.setAttribute('aria-hidden', 'false');
+	}
+
+	function close() {
+		lightbox.classList.add('hidden');
+		lightbox.classList.remove('flex');
+		lightbox.setAttribute('aria-hidden', 'true');
+		img.src = '';
+	}
+
+	thumbs.forEach((thumb) => {
+		thumb.addEventListener('click', () => show(Number(thumb.dataset.index)));
+	});
+
+	document.getElementById('lightbox-close')!.addEventListener('click', close);
+	document.getElementById('lightbox-prev')!.addEventListener('click', () => show(current - 1));
+	document.getElementById('lightbox-next')!.addEventListener('click', () => show(current + 1));
+	lightbox.addEventListener('click', (e) => {
+		if (e.target === lightbox) close();
+	});
+	document.addEventListener('keydown', (e) => {
+		if (lightbox.classList.contains('hidden')) return;
+		if (e.key === 'Escape') close();
+		if (e.key === 'ArrowLeft') show(current - 1);
+		if (e.key === 'ArrowRight') show(current + 1);
+	});
+</script>

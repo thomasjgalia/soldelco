@@ -1,0 +1,68 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const id = Number(Astro.params.id);
+const album = await env.DB.prepare('SELECT id, slug, title, description FROM albums WHERE id = ?')
+	.bind(id)
+	.first<{ id: number; slug: string; title: string; description: string | null }>();
+
+if (!album) return Astro.redirect('/admin/albums');
+
+const { results: photos } = await env.DB.prepare(
+	'SELECT id, r2_key, kind, caption FROM photos WHERE album_id = ? ORDER BY created_at DESC',
+)
+	.bind(id)
+	.all<{ id: number; r2_key: string; kind: string; caption: string | null }>();
+---
+
+<Layout title={album.title}>
+	<a href="/admin/albums" class="link-muted">&larr; All albums</a>
+	<h1 class="page-title mt-1">{album.title}</h1>
+
+	<form method="POST" action={`/api/admin/albums/${album.id}/update`} class="form-stack mb-6">
+		<input type="text" name="title" value={album.title} required class="field" />
+		<textarea name="description" placeholder="Description (optional)" class="field">
+{album.description}
+		</textarea>
+		<button type="submit" class="btn">Save</button>
+	</form>
+
+	<form method="POST" action={`/api/admin/albums/${album.id}/photos`} enctype="multipart/form-data" class="form-stack mb-8">
+		<input type="file" name="files" accept="image/*,video/*" multiple required class="field" />
+		<button type="submit" class="btn">Upload photos</button>
+	</form>
+
+	<div class="grid grid-cols-3 gap-2 mb-8">
+		{
+			photos.map((photo) => (
+				<div class="relative">
+					{photo.kind === 'image' ? (
+						<img src={`/img/${photo.r2_key}?w=200`} alt={photo.caption ?? ''} class="w-full aspect-square object-cover rounded" />
+					) : (
+						<div class="w-full aspect-square bg-stone-200 rounded flex items-center justify-center text-xs text-stone-500">
+							video
+						</div>
+					)}
+					<form method="POST" action={`/api/admin/photos/${photo.id}/delete`}>
+						<button
+							type="submit"
+							class="absolute top-1 right-1 bg-black/60 text-white text-xs rounded px-1.5 py-0.5"
+						>
+							delete
+						</button>
+					</form>
+				</div>
+			))
+		}
+	</div>
+
+	<form method="POST" action={`/api/admin/albums/${album.id}/delete`}>
+		<button type="submit" class="link-danger">Delete this album</button>
+	</form>
+</Layout>

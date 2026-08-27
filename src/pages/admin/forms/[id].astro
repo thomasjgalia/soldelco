@@ -1,0 +1,65 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const id = Number(Astro.params.id);
+const form = await env.DB.prepare('SELECT id, event_id, title FROM rsvp_forms WHERE id = ?')
+	.bind(id)
+	.first<{ id: number; event_id: number; title: string }>();
+
+if (!form) return Astro.redirect('/admin/events');
+
+const { results: rows } = await env.DB.prepare(
+	`SELECT rsvp_responses.attending, rsvp_responses.updated_at, members.display_name
+	 FROM rsvp_responses
+	 JOIN members ON members.id = rsvp_responses.member_id
+	 WHERE form_id = ?
+	 ORDER BY rsvp_responses.attending, members.display_name`,
+)
+	.bind(id)
+	.all<{ attending: string; updated_at: string; display_name: string }>();
+
+const yesCount = rows.filter((r) => r.attending === 'yes').length;
+const noCount = rows.filter((r) => r.attending === 'no').length;
+---
+
+<Layout title={form.title}>
+	<a href={`/admin/events/${form.event_id}`} class="link-muted">&larr; Back to event</a>
+	<h1 class="page-title mt-1">{form.title}</h1>
+	<p class="text-sm text-stone-500 mb-4">
+		{yesCount} in, {noCount} out
+	</p>
+
+	<table class="min-w-full max-w-sm text-sm border-collapse">
+		<thead>
+			<tr class="border-b border-stone-300 text-left">
+				<th class="py-2 pr-4">Name</th>
+				<th class="py-2 pr-4">Attending</th>
+				<th class="py-2 pr-4">Updated</th>
+			</tr>
+		</thead>
+		<tbody>
+			{
+				rows.map((row) => (
+					<tr class="border-b border-stone-200">
+						<td class="py-2 pr-4 font-medium">{row.display_name}</td>
+						<td class="py-2 pr-4">{row.attending === 'yes' ? 'Yes' : 'No'}</td>
+						<td class="py-2 pr-4 text-stone-500">{row.updated_at}</td>
+					</tr>
+				))
+			}
+			{rows.length === 0 && (
+				<tr>
+					<td class="py-4 text-stone-500" colspan="3">
+						No responses yet.
+					</td>
+				</tr>
+			)}
+		</tbody>
+	</table>
+</Layout>

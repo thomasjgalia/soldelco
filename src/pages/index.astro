@@ -1,17 +1,71 @@
 ---
+import Layout from '../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
 
+const { results: photos } = await env.DB.prepare(
+	"SELECT r2_key FROM photos WHERE kind = 'image' ORDER BY RANDOM() LIMIT 15",
+).all<{ r2_key: string }>();
+
+const urls = photos.map((p) => `/img/${p.r2_key}?w=800`);
+
+const nextEvent = await env.DB.prepare(
+	"SELECT slug, title, starts_at, location FROM events WHERE starts_at >= date('now') ORDER BY starts_at ASC LIMIT 1",
+).first<{ slug: string; title: string; starts_at: string; location: string | null }>();
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>
+<Layout>
+	{
+		urls.length > 0 && (
+			<div class="relative mx-auto mb-6 aspect-[4/3] w-full max-w-2xl overflow-hidden rounded-lg bg-stone-200 sm:aspect-video">
+				<img id="carousel-a" class="absolute inset-0 h-full w-full object-cover transition-opacity duration-700" alt="" decoding="async" />
+				<img
+					id="carousel-b"
+					class="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-700"
+					alt=""
+					decoding="async"
+				/>
+			</div>
+		)
+	}
+
+	<div class="text-center mt-8">
+		<h1 class="text-3xl font-bold mb-2">SOL</h1>
+		<p class="text-stone-600 mt-1">
+			Explore our photo albums, weekend events, and standings using the menu above.
+		</p>
+
+		{
+			nextEvent && (
+				<a href={`/events/${nextEvent.slug}`} class="mt-6 inline-block rounded-lg border border-stone-200 bg-white px-5 py-3 shadow-sm">
+					<p class="text-xs font-medium uppercase tracking-wide text-flag-red">Next up</p>
+					<p class="font-semibold text-navy">{nextEvent.title}</p>
+					<p class="text-sm text-stone-500">
+						{nextEvent.starts_at}
+						{nextEvent.location && ` · ${nextEvent.location}`}
+					</p>
+				</a>
+			)
+		}
+	</div>
+</Layout>
+
+<script define:vars={{ urls }}>
+	if (urls.length > 0) {
+		const imgs = [document.getElementById('carousel-a'), document.getElementById('carousel-b')];
+		let active = 0;
+		let index = 0;
+
+		imgs[0].src = urls[0];
+
+		if (urls.length > 1) {
+			setInterval(() => {
+				index = (index + 1) % urls.length;
+				const next = (active + 1) % 2;
+				imgs[next].src = urls[index];
+				imgs[next].classList.remove('opacity-0');
+				imgs[active].classList.add('opacity-0');
+				active = next;
+			}, 5000);
+		}
+	}
+</script>

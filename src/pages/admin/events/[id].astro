@@ -1,0 +1,143 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const id = Number(Astro.params.id);
+const event = await env.DB.prepare('SELECT id, slug, title, description, location, starts_at, ends_at FROM events WHERE id = ?')
+	.bind(id)
+	.first<{
+		id: number;
+		slug: string;
+		title: string;
+		description: string | null;
+		location: string | null;
+		starts_at: string | null;
+		ends_at: string | null;
+	}>();
+
+if (!event) return Astro.redirect('/admin/events');
+
+const { results: allAlbums } = await env.DB.prepare('SELECT id, title, event_id FROM albums ORDER BY title').all<{
+	id: number;
+	title: string;
+	event_id: number | null;
+}>();
+
+const { results: forms } = await env.DB.prepare(
+	`SELECT rsvp_forms.id, rsvp_forms.title,
+		(SELECT COUNT(*) FROM rsvp_responses WHERE rsvp_responses.form_id = rsvp_forms.id) as response_count
+	 FROM rsvp_forms WHERE event_id = ? ORDER BY created_at DESC`,
+)
+	.bind(id)
+	.all<{ id: number; title: string; response_count: number }>();
+
+const { results: competitions } = await env.DB.prepare(
+	`SELECT competitions.id, competitions.kind, competitions.title,
+		(SELECT COUNT(*) FROM teams WHERE teams.competition_id = competitions.id) as team_count
+	 FROM competitions WHERE event_id = ? ORDER BY played_on`,
+)
+	.bind(id)
+	.all<{ id: number; kind: string; title: string; team_count: number }>();
+---
+
+<Layout title={event.title}>
+	<a href="/admin/events" class="link-muted">&larr; All events</a>
+	<h1 class="page-title mt-1">{event.title}</h1>
+
+	<form method="POST" action={`/api/admin/events/${event.id}/update`} class="form-stack mb-8">
+		<input type="text" name="title" value={event.title} required class="field" />
+		<input type="text" name="location" value={event.location ?? ''} placeholder="Location" class="field" />
+		<label class="field-label">
+			Starts
+			<input type="date" name="starts_at" value={event.starts_at ?? ''} class="field mt-1" />
+		</label>
+		<label class="field-label">
+			Ends
+			<input type="date" name="ends_at" value={event.ends_at ?? ''} class="field mt-1" />
+		</label>
+		<textarea name="description" placeholder="Description" class="field">{event.description}</textarea>
+		<button type="submit" class="btn">Save</button>
+	</form>
+
+	<h2 class="section-title">Linked albums</h2>
+	<form method="POST" action={`/api/admin/events/${event.id}/albums`} class="flex flex-col gap-2 mb-8 max-w-sm">
+		{
+			allAlbums.map((album) => (
+				<label class="flex items-center gap-2 text-sm">
+					<input type="checkbox" name="albumIds" value={album.id} checked={album.event_id === event.id} />
+					{album.title}
+					{album.event_id && album.event_id !== event.id && <span class="text-stone-400"> (linked elsewhere)</span>}
+				</label>
+			))
+		}
+		{allAlbums.length === 0 && <p class="text-stone-500 text-sm">No albums yet.</p>}
+		<button type="submit" class="btn mt-2">Save album links</button>
+	</form>
+
+	<h2 class="section-title">RSVP forms</h2>
+	<ul class="flex flex-col divide-y divide-stone-200 mb-6 max-w-sm">
+		{
+			forms.map((form) => (
+				<li class="py-2 flex items-center justify-between">
+					<a href={`/admin/forms/${form.id}`} class="hover:underline">
+						{form.title}
+					</a>
+					<span class="text-sm text-stone-500">{form.response_count} responses</span>
+				</li>
+			))
+		}
+		{forms.length === 0 && <li class="py-2 text-stone-500 text-sm">No RSVP forms yet.</li>}
+	</ul>
+
+	<details class="max-w-sm">
+		<summary class="cursor-pointer text-stone-600 underline mb-3">Create RSVP form</summary>
+		<form method="POST" action={`/api/admin/events/${event.id}/forms`} class="flex flex-col gap-3">
+			<input type="text" name="title" required placeholder="Form title (e.g. Saturday Golf RSVP)" class="field" />
+			<label class="field-label">
+				Closes
+				<input type="date" name="closes_at" class="field mt-1" />
+			</label>
+			<button type="submit" class="btn">Create form</button>
+		</form>
+	</details>
+
+	<h2 class="section-title mt-8">Competitions</h2>
+	<ul class="flex flex-col divide-y divide-stone-200 mb-6 max-w-sm">
+		{
+			competitions.map((c) => (
+				<li class="py-2 flex items-center justify-between">
+					<a href={`/admin/competitions/${c.id}`} class="hover:underline">
+						{c.title}
+					</a>
+					<span class="text-sm text-stone-500">{c.team_count} teams</span>
+				</li>
+			))
+		}
+		{competitions.length === 0 && <li class="py-2 text-stone-500 text-sm">No competitions yet.</li>}
+	</ul>
+
+	<details class="max-w-sm mb-8">
+		<summary class="cursor-pointer text-stone-600 underline mb-3">Add competition</summary>
+		<form method="POST" action={`/api/admin/events/${event.id}/competitions`} class="flex flex-col gap-3">
+			<select name="kind" required class="field">
+				<option value="cornhole">Cornhole (Friday)</option>
+				<option value="golf_scramble">Golf scramble (Saturday)</option>
+			</select>
+			<input type="text" name="title" required placeholder="Title (e.g. Friday Cornhole)" class="field" />
+			<label class="field-label">
+				Played on
+				<input type="date" name="played_on" class="field mt-1" />
+			</label>
+			<button type="submit" class="btn">Add competition</button>
+		</form>
+	</details>
+
+	<form method="POST" action={`/api/admin/events/${event.id}/delete`} class="mt-8">
+		<button type="submit" class="link-danger">Delete this event</button>
+	</form>
+</Layout>
