@@ -2,94 +2,25 @@
 import Layout from '../../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
 import { isAdmin } from '../../lib/admin';
+import { getRecentPosts } from '../../lib/feed';
+import PostCard from '../../components/PostCard.astro';
+import ComposeDialog from '../../components/ComposeDialog.astro';
+import FeedLightbox from '../../components/FeedLightbox.astro';
 
-const identity = Astro.locals.identity;
+const identity = Astro.locals.identity ?? null;
 const admin = identity ? await isAdmin(identity.memberId) : false;
 
-const { results: rawPosts } = await env.DB.prepare(
-	`SELECT posts.id, posts.body, posts.link_url, posts.created_at, posts.updated_at,
-		members.id as author_id, members.display_name as author_name, members.avatar_key
-	 FROM posts JOIN members ON members.id = posts.member_id
-	 ORDER BY posts.created_at DESC
-	 LIMIT 100`,
-)
-	.bind()
-	.all<{
-		id: number;
-		body: string | null;
-		link_url: string | null;
-		created_at: string;
-		updated_at: string;
-		author_id: number;
-		author_name: string;
-		avatar_key: string | null;
-	}>();
+const posts = await getRecentPosts(env, identity, 100);
 
-const posts = await Promise.all(
-	rawPosts.map(async (post) => {
-		const { results: media } = await env.DB.prepare('SELECT r2_key, kind FROM post_media WHERE post_id = ? ORDER BY created_at')
-			.bind(post.id)
-			.all<{ r2_key: string; kind: string }>();
-
-		const { results: replies } = await env.DB.prepare(
-			`SELECT comments.id, comments.body, comments.created_at, comments.member_id, members.display_name
-			 FROM comments JOIN members ON members.id = comments.member_id
-			 WHERE comments.target_type = 'post' AND comments.target_id = ?
-			 ORDER BY comments.created_at`,
-		)
-			.bind(post.id)
-			.all<{ id: number; body: string; created_at: string; member_id: number; display_name: string }>();
-
-		const { results: reactionRows } = await env.DB.prepare("SELECT member_id FROM reactions WHERE target_type = 'post' AND target_id = ?")
-			.bind(post.id)
-			.all<{ member_id: number }>();
-
-		return {
-			...post,
-			media,
-			replies,
-			reactionCount: reactionRows.length,
-			iReacted: identity ? reactionRows.some((r) => r.member_id === identity.memberId) : false,
-			isOwn: identity?.memberId === post.author_id,
-		};
-	}),
-);
-
-const initialsFor = (name: string) =>
-	name
-		.split(' ')
-		.map((p) => p[0])
-		.join('')
-		.slice(0, 2)
-		.toUpperCase();
-
-// SQLite's datetime('now') is UTC with no offset marker -- append one so
-// Date parses it as UTC rather than assuming the server's local time, then
-// render in Eastern (where the group actually is) as "MM/DD/YY H:MM AM/PM".
-function formatTimestamp(sqliteUtc: string): string {
-	const date = new Date(sqliteUtc.replace(' ', 'T') + 'Z');
-	const parts = new Intl.DateTimeFormat('en-US', {
-		timeZone: 'America/New_York',
-		month: '2-digit',
-		day: '2-digit',
-		year: '2-digit',
-		hour: 'numeric',
-		minute: '2-digit',
-		hour12: true,
-	}).formatToParts(date);
-	const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
-	return `${get('month')}/${get('day')}/${get('year')} ${get('hour')}:${get('minute')} ${get('dayPeriod')}`;
-}
+const { results: members } = await env.DB.prepare(
+	"SELECT id, display_name FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+).all<{ id: number; display_name: string }>();
 ---
 
 <Layout title="Feed">
 	<div class="flex items-center justify-between mb-4">
 		<h1 class="page-title mb-0">Feed</h1>
-		{identity && (
-			<button type="button" id="open-compose" class="btn px-4">
-				+ Post
-			</button>
-		)}
+		{identity && <ComposeDialog members={members} redirectTo="/feed" />}
 	</div>
 
 	{
@@ -103,197 +34,10 @@ function formatTimestamp(sqliteUtc: string): string {
 		)
 	}
 
-	{identity && (
-		<dialog id="compose-dialog" class="rounded-xl p-0 w-[90vw] max-w-sm backdrop:bg-black/50">
-			<form method="POST" action="/api/feed" enctype="multipart/form-data" class="flex flex-col gap-3 p-4">
-				<div class="flex items-center justify-between">
-					<h2 class="font-bold">New post</h2>
-					<button type="button" id="close-compose" class="text-stone-400 text-2xl leading-none" aria-label="Close">
-						&times;
-					</button>
-				</div>
-				<textarea name="body" placeholder="What's going on?" class="field" rows={4} />
-				<input type="text" name="link_url" placeholder="Link (optional)" class="field" />
-				<input type="file" name="files" accept="image/*,video/*" multiple class="field" />
-				<button type="submit" class="btn">
-					Post
-				</button>
-			</form>
-		</dialog>
-	)}
-
 	<div class="flex flex-col gap-6">
-		{
-			posts.map((post) => (
-				<div class="border-b border-stone-200 pb-5">
-					<div class="flex items-center gap-2.5 mb-2">
-						{post.avatar_key ? (
-							<img src={`/img/${post.avatar_key}?w=64`} alt="" class="h-9 w-9 rounded-full object-cover" />
-						) : (
-							<span class="h-9 w-9 rounded-full bg-navy/10 text-navy flex items-center justify-center text-xs font-bold">
-								{initialsFor(post.author_name)}
-							</span>
-						)}
-						<div class="leading-tight">
-							<p class="text-sm font-semibold text-stone-900">{post.author_name}</p>
-							<p class="text-xs text-stone-400">
-								{formatTimestamp(post.created_at)}
-								{post.updated_at !== post.created_at && ' · edited'}
-							</p>
-						</div>
-					</div>
-
-					{post.body && <p class="text-[15px] text-stone-800 leading-relaxed whitespace-pre-wrap mb-2">{post.body}</p>}
-
-					{post.link_url && (
-						<a href={post.link_url} target="_blank" rel="noopener noreferrer" class="link text-sm block mb-2 break-all">
-							{post.link_url}
-						</a>
-					)}
-
-					{post.media.length > 0 && (
-						<div class="grid grid-cols-2 gap-1.5 mb-2">
-							{post.media.map((m) =>
-								m.kind === 'image' ? (
-									<button
-										type="button"
-										class="feed-lightbox-trigger block w-full"
-										data-full={`/img/${m.r2_key}?w=1400`}
-										data-kind="image"
-									>
-										<img src={`/img/${m.r2_key}?w=500`} alt="" class="w-full rounded-lg object-cover aspect-square" loading="lazy" />
-									</button>
-								) : (
-									<video src={`/img/${m.r2_key}`} controls preload="none" class="w-full rounded-lg bg-black aspect-square object-cover" />
-								),
-							)}
-						</div>
-					)}
-
-					<div class="flex items-center gap-4 text-sm text-stone-500">
-						{identity ? (
-							<form method="POST" action={`/api/feed/${post.id}/react`}>
-								<button type="submit" class={post.iReacted ? 'text-flag-red font-medium' : 'hover:text-flag-red'}>
-									{post.iReacted ? '♥' : '♡'} {post.reactionCount > 0 && post.reactionCount}
-								</button>
-							</form>
-						) : (
-							post.reactionCount > 0 && <span>♥ {post.reactionCount}</span>
-						)}
-
-						{post.isOwn && (
-							<details class="inline-block">
-								<summary class="cursor-pointer hover:text-navy select-none">edit</summary>
-								<form method="POST" action={`/api/feed/${post.id}/edit`} class="flex flex-col gap-2 mt-2">
-									<textarea name="body" class="field text-sm" rows={2}>
-										{post.body}
-									</textarea>
-									<input type="text" name="link_url" value={post.link_url ?? ''} placeholder="Link (optional)" class="field text-sm" />
-									<button type="submit" class="btn text-sm px-3 self-start">
-										Save
-									</button>
-								</form>
-							</details>
-						)}
-
-						{(post.isOwn || admin) && (
-							<form method="POST" action={`/api/feed/${post.id}/delete`}>
-								<button type="submit" class="link-danger">
-									delete
-								</button>
-							</form>
-						)}
-					</div>
-
-					{(post.replies.length > 0 || identity) && (
-						<div class="mt-3 flex flex-col gap-2 pl-3 border-l-2 border-stone-200">
-							{post.replies.map((reply) => (
-								<div class="text-sm">
-									<span class="font-semibold text-stone-900">{reply.display_name}</span>{' '}
-									<span class="text-stone-700">{reply.body}</span>
-									{(identity?.memberId === reply.member_id || admin) && (
-										<form method="POST" action={`/api/feed/comments/${reply.id}/delete`} class="inline">
-											<button type="submit" class="link-danger text-xs ml-1">
-												delete
-											</button>
-										</form>
-									)}
-								</div>
-							))}
-							{identity && (
-								<form method="POST" action={`/api/feed/${post.id}/reply`} class="flex gap-2 mt-1">
-									<input type="text" name="body" required placeholder="Reply..." class="field text-sm flex-1" />
-									<button type="submit" class="btn text-sm px-3">
-										Send
-									</button>
-								</form>
-							)}
-						</div>
-					)}
-				</div>
-			))
-		}
+		{posts.map((post) => <PostCard post={post} identity={identity} admin={admin} />)}
 		{posts.length === 0 && <p class="text-stone-500 text-sm">Nothing posted yet.</p>}
 	</div>
 
-	<div id="feed-lightbox" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-50" role="dialog" aria-hidden="true">
-		<button type="button" id="feed-lightbox-close" class="absolute top-4 right-4 text-white text-2xl leading-none" aria-label="Close">
-			&times;
-		</button>
-		<img id="feed-lightbox-img" src="" alt="" class="max-h-[90vh] max-w-[92vw] object-contain" />
-	</div>
+	<FeedLightbox />
 </Layout>
-
-<script>
-	function initCompose() {
-		const openBtn = document.getElementById('open-compose');
-		const dialog = document.getElementById('compose-dialog') as HTMLDialogElement | null;
-		const closeBtn = document.getElementById('close-compose');
-		openBtn?.addEventListener('click', () => dialog?.showModal());
-		closeBtn?.addEventListener('click', () => dialog?.close());
-		dialog?.addEventListener('click', (e) => {
-			if (e.target === dialog) dialog.close();
-		});
-	}
-
-	function initLightbox() {
-		const lightbox = document.getElementById('feed-lightbox');
-		const img = document.getElementById('feed-lightbox-img') as HTMLImageElement | null;
-		if (!lightbox || !img) return;
-
-		function close() {
-			lightbox!.classList.add('hidden');
-			lightbox!.classList.remove('flex');
-			lightbox!.setAttribute('aria-hidden', 'true');
-			img!.src = '';
-		}
-
-		document.querySelectorAll<HTMLButtonElement>('.feed-lightbox-trigger').forEach((trigger) => {
-			trigger.addEventListener('click', () => {
-				img!.src = trigger.dataset.full!;
-				lightbox!.classList.remove('hidden');
-				lightbox!.classList.add('flex');
-				lightbox!.setAttribute('aria-hidden', 'false');
-			});
-		});
-
-		document.getElementById('feed-lightbox-close')?.addEventListener('click', close);
-		lightbox.addEventListener('click', (e) => {
-			if (e.target === lightbox) close();
-		});
-		document.addEventListener('keydown', (e) => {
-			if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) close();
-		});
-	}
-
-	function init() {
-		initCompose();
-		initLightbox();
-	}
-
-	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', init);
-	} else {
-		init();
-	}
-</script>

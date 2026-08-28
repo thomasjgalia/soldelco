@@ -1,0 +1,49 @@
+---
+// Single overlay shared by every PostCard on the page -- include this once
+// per page that renders PostCard, not once per card.
+---
+
+<div id="feed-lightbox" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-50" role="dialog" aria-hidden="true">
+	<button type="button" id="feed-lightbox-close" class="absolute top-4 right-4 text-white text-2xl leading-none" aria-label="Close">
+		&times;
+	</button>
+	<img id="feed-lightbox-img" src="" alt="" class="max-h-[90vh] max-w-[92vw] object-contain" />
+</div>
+
+<script>
+	function initLightbox() {
+		const lightbox = document.getElementById('feed-lightbox');
+		const img = document.getElementById('feed-lightbox-img') as HTMLImageElement | null;
+		if (!lightbox || !img) return;
+
+		function close() {
+			lightbox!.classList.add('hidden');
+			lightbox!.classList.remove('flex');
+			lightbox!.setAttribute('aria-hidden', 'true');
+			img!.src = '';
+		}
+
+		document.querySelectorAll<HTMLButtonElement>('.feed-lightbox-trigger').forEach((trigger) => {
+			trigger.addEventListener('click', () => {
+				img!.src = trigger.dataset.full!;
+				lightbox!.classList.remove('hidden');
+				lightbox!.classList.add('flex');
+				lightbox!.setAttribute('aria-hidden', 'false');
+			});
+		});
+
+		document.getElementById('feed-lightbox-close')?.addEventListener('click', close);
+		lightbox.addEventListener('click', (e) => {
+			if (e.target === lightbox) close();
+		});
+		document.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) close();
+		});
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initLightbox);
+	} else {
+		initLightbox();
+	}
+</script>

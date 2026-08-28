@@ -1,0 +1,59 @@
+---
+interface Props {
+	members: { id: number; display_name: string }[];
+	redirectTo?: string;
+}
+const { members, redirectTo = '/feed' } = Astro.props;
+---
+
+<button type="button" id="open-compose" class="btn px-4">
+	+ Post
+</button>
+
+<dialog id="compose-dialog" class="rounded-xl p-0 w-[90vw] max-w-sm backdrop:bg-black/50">
+	<form method="POST" action="/api/feed" enctype="multipart/form-data" class="flex flex-col gap-3 p-4">
+		<input type="hidden" name="redirect" value={redirectTo} />
+		<div class="flex items-center justify-between">
+			<h2 class="font-bold">New post</h2>
+			<button type="button" id="close-compose" class="text-stone-400 text-2xl leading-none" aria-label="Close">
+				&times;
+			</button>
+		</div>
+		<textarea name="body" placeholder="What's going on?" class="field" rows={4} />
+		<input type="text" name="link_url" placeholder="Link (optional)" class="field" />
+		<input type="file" name="files" accept="image/*,video/*" multiple class="field" />
+		<details>
+			<summary class="text-sm text-stone-600 cursor-pointer select-none">Tag someone</summary>
+			<fieldset class="border border-stone-300 rounded-lg p-2 mt-2 max-h-32 overflow-y-auto">
+				{members.map((m) => (
+					<label class="flex items-center gap-2 text-sm py-0.5">
+						<input type="checkbox" name="tagIds" value={m.id} />
+						{m.display_name}
+					</label>
+				))}
+			</fieldset>
+		</details>
+		<button type="submit" class="btn">
+			Post
+		</button>
+	</form>
+</dialog>
+
+<script>
+	function initCompose() {
+		const openBtn = document.getElementById('open-compose');
+		const dialog = document.getElementById('compose-dialog') as HTMLDialogElement | null;
+		const closeBtn = document.getElementById('close-compose');
+		openBtn?.addEventListener('click', () => dialog?.showModal());
+		closeBtn?.addEventListener('click', () => dialog?.close());
+		dialog?.addEventListener('click', (e) => {
+			if (e.target === dialog) dialog.close();
+		});
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initCompose);
+	} else {
+		initCompose();
+	}
+</script>

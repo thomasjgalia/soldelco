@@ -1,3 +1,76 @@
+import type { Identity } from './auth';
+
+export type FeedPost = {
+	id: number;
+	body: string | null;
+	link_url: string | null;
+	created_at: string;
+	updated_at: string;
+	author_id: number;
+	author_name: string;
+	avatar_key: string | null;
+	media: { r2_key: string; kind: string }[];
+	replies: { id: number; body: string; created_at: string; member_id: number; display_name: string; avatar_key: string | null }[];
+	tags: { member_id: number; display_name: string }[];
+	reactionCount: number;
+	iReacted: boolean;
+	isOwn: boolean;
+};
+
+// Fully hydrates the most recent posts (media, replies, reactions, tags) for
+// rendering -- shared by the feed page and the homepage's recent-posts strip
+// so the two don't drift out of sync on what a "post" looks like.
+export async function getRecentPosts(env: Env, identity: Identity | null, limit: number): Promise<FeedPost[]> {
+	const { results: rawPosts } = await env.DB.prepare(
+		`SELECT posts.id, posts.body, posts.link_url, posts.created_at, posts.updated_at,
+			members.id as author_id, members.display_name as author_name, members.avatar_key
+		 FROM posts JOIN members ON members.id = posts.member_id
+		 ORDER BY posts.created_at DESC
+		 LIMIT ?`,
+	)
+		.bind(limit)
+		.all<Omit<FeedPost, 'media' | 'replies' | 'tags' | 'reactionCount' | 'iReacted' | 'isOwn'>>();
+
+	return Promise.all(
+		rawPosts.map(async (post) => {
+			const { results: media } = await env.DB.prepare('SELECT r2_key, kind FROM post_media WHERE post_id = ? ORDER BY created_at')
+				.bind(post.id)
+				.all<{ r2_key: string; kind: string }>();
+
+			const { results: replies } = await env.DB.prepare(
+				`SELECT comments.id, comments.body, comments.created_at, comments.member_id, members.display_name, members.avatar_key
+				 FROM comments JOIN members ON members.id = comments.member_id
+				 WHERE comments.target_type = 'post' AND comments.target_id = ?
+				 ORDER BY comments.created_at`,
+			)
+				.bind(post.id)
+				.all<{ id: number; body: string; created_at: string; member_id: number; display_name: string; avatar_key: string | null }>();
+
+			const { results: tags } = await env.DB.prepare(
+				`SELECT members.id as member_id, members.display_name
+				 FROM post_tags JOIN members ON members.id = post_tags.member_id
+				 WHERE post_tags.post_id = ?`,
+			)
+				.bind(post.id)
+				.all<{ member_id: number; display_name: string }>();
+
+			const { results: reactionRows } = await env.DB.prepare("SELECT member_id FROM reactions WHERE target_type = 'post' AND target_id = ?")
+				.bind(post.id)
+				.all<{ member_id: number }>();
+
+			return {
+				...post,
+				media,
+				replies,
+				tags,
+				reactionCount: reactionRows.length,
+				iReacted: identity ? reactionRows.some((r) => r.member_id === identity.memberId) : false,
+				isOwn: identity?.memberId === post.author_id,
+			};
+		}),
+	);
+}
+
 // Feed post media -- same shape as album photos, but keyed under posts/ and
 // tied to a post rather than an album.
 
@@ -43,6 +116,7 @@ export async function deletePost(env: Env, postId: number): Promise<void> {
 
 	await env.DB.batch([
 		env.DB.prepare('DELETE FROM post_media WHERE post_id = ?').bind(postId),
+		env.DB.prepare('DELETE FROM post_tags WHERE post_id = ?').bind(postId),
 		env.DB.prepare("DELETE FROM comments WHERE target_type = 'post' AND target_id = ?").bind(postId),
 		env.DB.prepare("DELETE FROM reactions WHERE target_type = 'post' AND target_id = ?").bind(postId),
 		env.DB.prepare('DELETE FROM posts WHERE id = ?').bind(postId),

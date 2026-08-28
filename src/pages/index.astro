@@ -1,6 +1,11 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
+import { isAdmin } from '../lib/admin';
+import { getRecentPosts } from '../lib/feed';
+import PostCard from '../components/PostCard.astro';
+import ComposeDialog from '../components/ComposeDialog.astro';
+import FeedLightbox from '../components/FeedLightbox.astro';
 
 const { results: photos } = await env.DB.prepare(
 	"SELECT r2_key FROM photos WHERE kind = 'image' ORDER BY RANDOM() LIMIT 15",
@@ -11,6 +16,14 @@ const urls = photos.map((p) => `/img/${p.r2_key}?w=800`);
 const nextEvent = await env.DB.prepare(
 	"SELECT slug, title, starts_at, location FROM events WHERE starts_at >= date('now') ORDER BY starts_at ASC LIMIT 1",
 ).first<{ slug: string; title: string; starts_at: string; location: string | null }>();
+
+const identity = Astro.locals.identity ?? null;
+const admin = identity ? await isAdmin(identity.memberId) : false;
+const posts = await getRecentPosts(env, identity, 3);
+
+const { results: members } = await env.DB.prepare(
+	"SELECT id, display_name FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+).all<{ id: number; display_name: string }>();
 ---
 
 <Layout>
@@ -30,9 +43,6 @@ const nextEvent = await env.DB.prepare(
 
 	<div class="text-center mt-8">
 		<h1 class="text-3xl font-bold mb-2">SOL</h1>
-		<p class="text-stone-600 mt-1">
-			Explore our photo albums, weekend events, and standings using the menu above.
-		</p>
 
 		{
 			nextEvent && (
@@ -46,7 +56,28 @@ const nextEvent = await env.DB.prepare(
 				</a>
 			)
 		}
+
+		{identity && (
+			<div class="mt-4">
+				<ComposeDialog members={members} redirectTo="/" />
+			</div>
+		)}
 	</div>
+
+	<div class="text-left mt-10">
+		<div class="flex items-center justify-between mb-3">
+			<h2 class="section-title mb-0">Recent posts</h2>
+			<a href="/feed" class="link text-sm">
+				See all
+			</a>
+		</div>
+		<div class="flex flex-col gap-6">
+			{posts.map((post) => <PostCard post={post} identity={identity} admin={admin} />)}
+			{posts.length === 0 && <p class="text-stone-500 text-sm">Nothing posted yet.</p>}
+		</div>
+	</div>
+
+	<FeedLightbox />
 </Layout>
 
 <script define:vars={{ urls }}>
