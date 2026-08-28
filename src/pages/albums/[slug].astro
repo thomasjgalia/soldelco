@@ -3,6 +3,7 @@ import Layout from '../../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
 
 const { slug } = Astro.params;
+const identity = Astro.locals.identity;
 const album = await env.DB.prepare('SELECT id, title, description FROM albums WHERE slug = ?')
 	.bind(slug)
 	.first<{ id: number; title: string; description: string | null }>();
@@ -22,6 +23,24 @@ const images = photos.filter((p) => p.kind === 'image');
 	<a href="/albums" class="link-muted">&larr; All albums</a>
 	<h1 class="page-title mt-1">{album.title}</h1>
 	{album.description && <p class="text-stone-600 mb-4">{album.description}</p>}
+
+	{
+		!identity ? (
+			<p class="text-stone-500 text-sm mb-4">
+				<a href={`/whoami?redirect=/albums/${slug}`} class="link">
+					Pick your name
+				</a>{' '}
+				to add your own photos.
+			</p>
+		) : (
+			<form method="POST" action={`/api/albums/${album.id}/photos`} enctype="multipart/form-data" class="flex gap-2 mb-4">
+				<input type="file" name="files" accept="image/*,video/*" multiple required class="field flex-1" />
+				<button type="submit" class="btn shrink-0">
+					Add photos
+				</button>
+			</form>
+		)
+	}
 
 	<div class="columns-2 sm:columns-3 gap-2 mt-4">
 		{

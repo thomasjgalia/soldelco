@@ -1,0 +1,39 @@
+// Shared by both the admin and member-facing upload routes -- who's allowed
+// to call it differs, but writing a photo into R2 + `photos` doesn't.
+
+export async function uploadPhotosToAlbum(
+	env: Env,
+	album: { id: number; slug: string },
+	files: File[],
+	uploadedByMemberId: number,
+): Promise<void> {
+	for (const file of files) {
+		if (file.size === 0) continue;
+		const isImage = file.type.startsWith('image/');
+		const isVideo = file.type.startsWith('video/');
+		if (!isImage && !isVideo) continue;
+
+		const ext = file.name.split('.').pop()?.toLowerCase() || (isImage ? 'jpg' : 'mov');
+		const key = `albums/${album.slug}/${crypto.randomUUID()}.${ext}`;
+
+		let width: number | null = null;
+		let height: number | null = null;
+		if (isImage) {
+			try {
+				const info = await env.IMAGES.info(file.stream());
+				if ('width' in info) {
+					width = info.width;
+					height = info.height;
+				}
+			} catch {
+				// Not a format the Images binding can introspect; store without dimensions.
+			}
+		}
+
+		await env.PHOTOS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+
+		await env.DB.prepare('INSERT INTO photos (album_id, r2_key, kind, width, height, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)')
+			.bind(album.id, key, isImage ? 'image' : 'video', width, height, uploadedByMemberId)
+			.run();
+	}
+}
