@@ -10,11 +10,11 @@ export const POST: APIRoute = async ({ request, params, locals, redirect }) => {
 
 	const eventId = Number(params.id);
 	const form = await request.formData();
-	const checkedIds = form.getAll('albumIds').map((v) => Number(v));
+	const albumId = Number(form.get('albumId') ?? '') || null;
 
 	await env.DB.prepare('UPDATE albums SET event_id = NULL WHERE event_id = ?').bind(eventId).run();
 
-	for (const albumId of checkedIds) {
+	if (albumId) {
 		await env.DB.prepare('UPDATE albums SET event_id = ? WHERE id = ?').bind(eventId, albumId).run();
 	}
 

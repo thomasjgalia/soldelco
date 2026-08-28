@@ -59,19 +59,21 @@ const KIND_LABELS: Record<string, string> = { score: 'Score', placement: 'Placem
 		<button type="submit" class="btn">Save</button>
 	</form>
 
-	<h2 class="section-title">Linked albums</h2>
+	<h2 class="section-title">Linked album</h2>
 	<form method="POST" action={`/api/admin/events/${event.id}/albums`} class="flex flex-col gap-2 mb-8 max-w-sm">
-		{
-			allAlbums.map((album) => (
-				<label class="flex items-center gap-2 text-sm">
-					<input type="checkbox" name="albumIds" value={album.id} checked={album.event_id === event.id} />
-					{album.title}
-					{album.event_id && album.event_id !== event.id && <span class="text-stone-400"> (linked elsewhere)</span>}
-				</label>
-			))
-		}
+		<select name="albumId" class="field">
+			<option value="">— none —</option>
+			{
+				allAlbums.map((album) => (
+					<option value={album.id} selected={album.event_id === event.id}>
+						{album.title}
+						{album.event_id && album.event_id !== event.id ? ' (linked elsewhere)' : ''}
+					</option>
+				))
+			}
+		</select>
 		{allAlbums.length === 0 && <p class="text-stone-500 text-sm">No albums yet.</p>}
-		<button type="submit" class="btn mt-2">Save album links</button>
+		<button type="submit" class="btn mt-2">Save album link</button>
 	</form>
 
 	<h2 class="section-title">Activities</h2>
