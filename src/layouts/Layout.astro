@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import { env } from 'cloudflare:workers';
 import { EXTERNAL_LINKS } from '../config/site';
 import { isAdmin } from '../lib/admin';
 
@@ -10,6 +11,16 @@ interface Props {
 const { title } = Astro.props;
 const identity = Astro.locals.identity;
 const admin = identity ? await isAdmin(identity.memberId) : false;
+const avatarKey = identity
+	? (await env.DB.prepare('SELECT avatar_key FROM members WHERE id = ?').bind(identity.memberId).first<{ avatar_key: string | null }>())
+			?.avatar_key ?? null
+	: null;
+const initials = identity
+	?.displayName.split(' ')
+	.map((p) => p[0])
+	.join('')
+	.slice(0, 2)
+	.toUpperCase();
 const pageTitle = title ? `${title} · SOL` : 'SOL';
 ---
 
@@ -39,60 +50,74 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 					SOL
 				</a>
 
-				<button
-					id="nav-toggle"
-					type="button"
-					class="sm:hidden -mr-2 p-2 text-white"
-					aria-label="Menu"
-					aria-expanded="false"
-					aria-controls="site-nav"
-				>
-					<svg
-						width="22"
-						height="22"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						class="pointer-events-none"
+				<div class="flex items-center gap-3">
+					<nav
+						id="site-nav"
+						class="hidden flex-col gap-1 absolute inset-x-0 top-full border-b border-stone-200 bg-white px-4 py-3 shadow-md sm:static sm:flex sm:flex-row sm:items-center sm:gap-4 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none text-sm font-medium"
 					>
-						<line x1="3" y1="6" x2="21" y2="6"></line>
-						<line x1="3" y1="12" x2="21" y2="12"></line>
-						<line x1="3" y1="18" x2="21" y2="18"></line>
-					</svg>
-				</button>
+						<a href="/albums" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Albums</a>
+						<a href="/events" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Events</a>
+						<a href="/records" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Records</a>
+						<a href="/members" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Sons of Liberty</a>
+						<a
+							href={EXTERNAL_LINKS.golf}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
+						>
+							Golf
+						</a>
+						<a
+							href={EXTERNAL_LINKS.cornhole}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
+						>
+							Cornhole
+						</a>
+						{admin && (
+							<a href="/admin" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">
+								Admin
+							</a>
+						)}
+					</nav>
 
-				<nav
-					id="site-nav"
-					class="hidden flex-col gap-1 absolute inset-x-0 top-full border-b border-stone-200 bg-white px-4 py-3 shadow-md sm:static sm:flex sm:flex-row sm:items-center sm:gap-4 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none text-sm font-medium"
-				>
-					<a href="/albums" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Albums</a>
-					<a href="/events" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Events</a>
-					<a href="/records" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Records</a>
-					<a href="/members" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Sons of Liberty</a>
-					<a
-						href={EXTERNAL_LINKS.golf}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
-					>
-						Golf
-					</a>
-					<a
-						href={EXTERNAL_LINKS.cornhole}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
-					>
-						Cornhole
-					</a>
-					{admin && (
-						<a href="/admin" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">
-							Admin
+					{identity && (
+						<a href="/profile" class="shrink-0" aria-label="My profile" title="My profile">
+							{avatarKey ? (
+								<img src={`/img/${avatarKey}?w=64`} alt="" class="h-8 w-8 rounded-full object-cover border-2 border-white/50" />
+							) : (
+								<span class="h-8 w-8 rounded-full bg-white/15 text-white border-2 border-white/50 flex items-center justify-center text-xs font-bold">
+									{initials}
+								</span>
+							)}
 						</a>
 					)}
-				</nav>
+
+					<button
+						id="nav-toggle"
+						type="button"
+						class="sm:hidden -mr-2 p-2 text-white"
+						aria-label="Menu"
+						aria-expanded="false"
+						aria-controls="site-nav"
+					>
+						<svg
+							width="22"
+							height="22"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							class="pointer-events-none"
+						>
+							<line x1="3" y1="6" x2="21" y2="6"></line>
+							<line x1="3" y1="12" x2="21" y2="12"></line>
+							<line x1="3" y1="18" x2="21" y2="18"></line>
+						</svg>
+					</button>
+				</div>
 			</div>
 		</header>
 
