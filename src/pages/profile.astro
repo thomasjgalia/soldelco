@@ -5,11 +5,25 @@ import { env } from 'cloudflare:workers';
 const identity = Astro.locals.identity;
 if (!identity) return Astro.redirect('/whoami?redirect=/profile');
 
-const member = await env.DB.prepare('SELECT id, display_name, avatar_key, email, phone, passcode FROM members WHERE id = ?')
+const member = await env.DB.prepare('SELECT id, display_name, avatar_key, email, phone, birthday, address, passcode FROM members WHERE id = ?')
 	.bind(identity.memberId)
-	.first<{ id: number; display_name: string; avatar_key: string | null; email: string | null; phone: string | null; passcode: string | null }>();
+	.first<{
+		id: number;
+		display_name: string;
+		avatar_key: string | null;
+		email: string | null;
+		phone: string | null;
+		birthday: string | null;
+		address: string | null;
+		passcode: string | null;
+	}>();
 
 if (!member) return Astro.redirect('/whoami');
+
+// <input type="date"> needs a full ISO date -- stored birthdays are MM-DD
+// only (no year), so pad with a placeholder year just so the native picker
+// has something valid to show; the year is discarded again on save.
+const birthdayInputValue = member.birthday ? `2000-${member.birthday}` : '';
 
 const hasPasscode = !!member.passcode;
 const error = Astro.url.searchParams.get('error');
@@ -53,6 +67,15 @@ const initials = member.display_name
 		<label class="field-label">
 			Phone
 			<input type="tel" name="phone" value={member.phone ?? ''} class="field mt-1" />
+		</label>
+		<label class="field-label">
+			Birthday
+			<input type="date" name="birthday" value={birthdayInputValue} class="field mt-1" />
+			<span class="block text-xs text-stone-500 mt-1">Only the month and day are shown to anyone -- the year is never saved.</span>
+		</label>
+		<label class="field-label">
+			Address
+			<input type="text" name="address" value={member.address ?? ''} placeholder="Street, City, State ZIP" class="field mt-1" />
 		</label>
 
 		{hasPasscode ? (

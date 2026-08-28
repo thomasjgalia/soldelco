@@ -25,10 +25,15 @@ export const POST: APIRoute = async ({ request, locals, redirect }) => {
 
 	const email = String(form.get('email') ?? '').trim() || null;
 	const phone = String(form.get('phone') ?? '').trim() || null;
+	const address = String(form.get('address') ?? '').trim() || null;
+	// <input type="date"> submits a full YYYY-MM-DD -- only MM-DD is ever
+	// stored (see the migration comment), the padded year gets dropped here.
+	const birthdayRaw = String(form.get('birthday') ?? '').trim();
+	const birthday = /^\d{4}-\d{2}-\d{2}$/.test(birthdayRaw) ? birthdayRaw.slice(5) : null;
 	const newPasscode = String(form.get('newPasscode') ?? '').trim();
 
-	const sets = ['email = ?', 'phone = ?'];
-	const values: unknown[] = [email, phone];
+	const sets = ['email = ?', 'phone = ?', 'birthday = ?', 'address = ?'];
+	const values: unknown[] = [email, phone, birthday, address];
 	if (newPasscode) {
 		sets.push('passcode = ?');
 		values.push(newPasscode);

@@ -31,6 +31,11 @@ solheadshots/
 scripts/cloudinary-albums.json
 scripts/generated-migration.sql
 
+# contacts export (has emails/phone/addresses/photos) and its parsed output
+solcontacts.vcf
+scripts/contacts_parsed.json
+scripts/apply_contacts.sql
+
 # wrangler local state
 .wrangler/
 

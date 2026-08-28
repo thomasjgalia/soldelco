@@ -3,8 +3,22 @@ import Layout from '../../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
 
 const { results: members } = await env.DB.prepare(
-	"SELECT id, display_name, avatar_key, email, phone FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
-).all<{ id: number; display_name: string; avatar_key: string | null; email: string | null; phone: string | null }>();
+	"SELECT id, display_name, avatar_key, email, phone, birthday, address FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+).all<{
+	id: number;
+	display_name: string;
+	avatar_key: string | null;
+	email: string | null;
+	phone: string | null;
+	birthday: string | null;
+	address: string | null;
+}>();
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatBirthday(mmdd: string): string {
+	const [month, day] = mmdd.split('-').map(Number);
+	return `${MONTH_NAMES[month - 1]} ${day}`;
+}
 ---
 
 <Layout title="Sons of Liberty">
@@ -29,13 +43,16 @@ const { results: members } = await env.DB.prepare(
 						)}
 						<p class="text-xs font-medium leading-tight">{m.display_name}</p>
 					</summary>
-					{(m.email || m.phone) && (
+					{m.email || m.phone || m.birthday || m.address ? (
 						<div class="text-[11px] text-stone-500 text-center mt-1 leading-tight break-words">
 							{m.email && <p>{m.email}</p>}
 							{m.phone && <p>{m.phone}</p>}
+							{m.birthday && <p>🎂 {formatBirthday(m.birthday)}</p>}
+							{m.address && <p>{m.address}</p>}
 						</div>
+					) : (
+						<p class="text-[11px] text-stone-400 text-center mt-1">No contact info yet</p>
 					)}
-					{!m.email && !m.phone && <p class="text-[11px] text-stone-400 text-center mt-1">No contact info yet</p>}
 				</details>
 			))
 		}
