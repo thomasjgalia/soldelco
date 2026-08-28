@@ -1,0 +1,200 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../lib/admin';
+
+const identity = Astro.locals.identity;
+const admin = identity ? await isAdmin(identity.memberId) : false;
+
+const { results: rawPosts } = await env.DB.prepare(
+	`SELECT posts.id, posts.body, posts.link_url, posts.created_at, posts.updated_at,
+		members.id as author_id, members.display_name as author_name, members.avatar_key
+	 FROM posts JOIN members ON members.id = posts.member_id
+	 ORDER BY posts.created_at DESC
+	 LIMIT 100`,
+)
+	.bind()
+	.all<{
+		id: number;
+		body: string | null;
+		link_url: string | null;
+		created_at: string;
+		updated_at: string;
+		author_id: number;
+		author_name: string;
+		avatar_key: string | null;
+	}>();
+
+const posts = await Promise.all(
+	rawPosts.map(async (post) => {
+		const { results: media } = await env.DB.prepare('SELECT r2_key, kind FROM post_media WHERE post_id = ? ORDER BY created_at')
+			.bind(post.id)
+			.all<{ r2_key: string; kind: string }>();
+
+		const { results: replies } = await env.DB.prepare(
+			`SELECT comments.id, comments.body, comments.created_at, comments.member_id, members.display_name
+			 FROM comments JOIN members ON members.id = comments.member_id
+			 WHERE comments.target_type = 'post' AND comments.target_id = ?
+			 ORDER BY comments.created_at`,
+		)
+			.bind(post.id)
+			.all<{ id: number; body: string; created_at: string; member_id: number; display_name: string }>();
+
+		const { results: reactionRows } = await env.DB.prepare("SELECT member_id FROM reactions WHERE target_type = 'post' AND target_id = ?")
+			.bind(post.id)
+			.all<{ member_id: number }>();
+
+		return {
+			...post,
+			media,
+			replies,
+			reactionCount: reactionRows.length,
+			iReacted: identity ? reactionRows.some((r) => r.member_id === identity.memberId) : false,
+			isOwn: identity?.memberId === post.author_id,
+		};
+	}),
+);
+
+const initialsFor = (name: string) =>
+	name
+		.split(' ')
+		.map((p) => p[0])
+		.join('')
+		.slice(0, 2)
+		.toUpperCase();
+---
+
+<Layout title="Feed">
+	<h1 class="page-title">Feed</h1>
+
+	{
+		!identity ? (
+			<p class="text-stone-500 text-sm mb-6">
+				<a href="/whoami?redirect=/feed" class="link">
+					Pick your name
+				</a>{' '}
+				to post.
+			</p>
+		) : (
+			<form method="POST" action="/api/feed" enctype="multipart/form-data" class="form-stack mb-8">
+				<textarea name="body" placeholder="What's going on?" class="field" rows={3} />
+				<input type="text" name="link_url" placeholder="Link (optional)" class="field" />
+				<input type="file" name="files" accept="image/*,video/*" multiple class="field" />
+				<button type="submit" class="btn">
+					Post
+				</button>
+			</form>
+		)
+	}
+
+	<div class="flex flex-col gap-6">
+		{
+			posts.map((post) => (
+				<div class="border-b border-stone-200 pb-5">
+					<div class="flex items-center gap-2 mb-2">
+						{post.avatar_key ? (
+							<img src={`/img/${post.avatar_key}?w=64`} alt="" class="h-8 w-8 rounded-full object-cover" />
+						) : (
+							<span class="h-8 w-8 rounded-full bg-navy/10 text-navy flex items-center justify-center text-xs font-bold">
+								{initialsFor(post.author_name)}
+							</span>
+						)}
+						<div class="leading-tight">
+							<p class="text-sm font-medium">{post.author_name}</p>
+							<p class="text-xs text-stone-500">
+								{post.created_at}
+								{post.updated_at !== post.created_at && ' · edited'}
+							</p>
+						</div>
+					</div>
+
+					{post.body && <p class="text-sm whitespace-pre-wrap mb-2">{post.body}</p>}
+
+					{post.link_url && (
+						<a href={post.link_url} target="_blank" rel="noopener noreferrer" class="link text-sm block mb-2 break-all">
+							{post.link_url}
+						</a>
+					)}
+
+					{post.media.length > 0 && (
+						<div class="grid grid-cols-2 gap-1.5 mb-2">
+							{post.media.map((m) =>
+								m.kind === 'image' ? (
+									<img src={`/img/${m.r2_key}?w=500`} alt="" class="w-full rounded-lg object-cover aspect-square" loading="lazy" />
+								) : (
+									<video src={`/img/${m.r2_key}`} controls preload="none" class="w-full rounded-lg bg-black aspect-square object-cover" />
+								),
+							)}
+						</div>
+					)}
+
+					<div class="flex items-center gap-4 text-sm text-stone-500">
+						{identity ? (
+							<form method="POST" action={`/api/feed/${post.id}/react`}>
+								<button type="submit" class={post.iReacted ? 'text-flag-red font-medium' : 'hover:text-flag-red'}>
+									{post.iReacted ? '♥' : '♡'} {post.reactionCount > 0 && post.reactionCount}
+								</button>
+							</form>
+						) : (
+							post.reactionCount > 0 && <span>♥ {post.reactionCount}</span>
+						)}
+
+						{(post.isOwn || admin) && (
+							<form method="POST" action={`/api/feed/${post.id}/delete`}>
+								<button type="submit" class="link-danger">
+									delete
+								</button>
+							</form>
+						)}
+					</div>
+
+					{post.isOwn && (
+						<details class="mt-2">
+							<summary class="text-xs text-stone-500 cursor-pointer select-none">edit</summary>
+							<form method="POST" action={`/api/feed/${post.id}/edit`} class="flex flex-col gap-2 mt-2">
+								<textarea name="body" class="field text-sm" rows={2}>
+									{post.body}
+								</textarea>
+								<input type="text" name="link_url" value={post.link_url ?? ''} placeholder="Link (optional)" class="field text-sm" />
+								<button type="submit" class="btn text-sm px-3 self-start">
+									Save
+								</button>
+							</form>
+						</details>
+					)}
+
+					{(post.replies.length > 0 || identity) && (
+						<details class="mt-2">
+							<summary class="text-xs text-stone-500 cursor-pointer select-none">
+								{post.replies.length} repl{post.replies.length === 1 ? 'y' : 'ies'}
+							</summary>
+							<div class="mt-2 flex flex-col gap-2 pl-3 border-l-2 border-stone-200">
+								{post.replies.map((reply) => (
+									<div class="text-sm">
+										<span class="font-medium">{reply.display_name}</span> {reply.body}
+										{(identity?.memberId === reply.member_id || admin) && (
+											<form method="POST" action={`/api/feed/comments/${reply.id}/delete`} class="inline">
+												<button type="submit" class="link-danger text-xs ml-1">
+													delete
+												</button>
+											</form>
+										)}
+									</div>
+								))}
+								{identity && (
+									<form method="POST" action={`/api/feed/${post.id}/reply`} class="flex gap-2 mt-1">
+										<input type="text" name="body" required placeholder="Reply..." class="field text-sm flex-1" />
+										<button type="submit" class="btn text-sm px-3">
+											Send
+										</button>
+									</form>
+								)}
+							</div>
+						</details>
+					)}
+				</div>
+			))
+		}
+		{posts.length === 0 && <p class="text-stone-500 text-sm">Nothing posted yet.</p>}
+	</div>
+</Layout>
