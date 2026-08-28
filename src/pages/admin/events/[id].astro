@@ -102,11 +102,14 @@ const KIND_LABELS: Record<string, string> = { score: 'Score', placement: 'Placem
 		<summary class="cursor-pointer text-stone-600 underline mb-3">Add activity</summary>
 		<form method="POST" action={`/api/admin/events/${event.id}/competitions`} class="flex flex-col gap-3">
 			<input type="text" name="title" required placeholder="Title (e.g. Friday Cornhole, Axe Throwing)" class="field" />
-			<select name="kind" required class="field">
-				<option value="placement">Placement (final standings, 1st/2nd/3rd...)</option>
-				<option value="score">Score (numeric, lower wins)</option>
-				<option value="rsvp_only">RSVP only (no scoring)</option>
-			</select>
+			<label class="field-label">
+				How are results tracked?
+				<select name="kind" required class="field mt-1">
+					<option value="placement">Final standings you enter by hand — like cornhole (1st, 2nd, 3rd...)</option>
+					<option value="score">A number where lowest wins — like golf (strokes)</option>
+					<option value="rsvp_only">No results, just a headcount — like dinner plans</option>
+				</select>
+			</label>
 			<label class="field-label">
 				Played on
 				<input type="date" name="played_on" class="field mt-1" />
