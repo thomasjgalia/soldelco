@@ -6,10 +6,11 @@ import { safeRedirect } from '../lib/auth';
 const redirect = safeRedirect(Astro.url.searchParams.get('redirect'));
 
 const { results: members } = await env.DB.prepare(
-	"SELECT id, display_name FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+	"SELECT id, display_name, avatar_key FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
 ).all<{
 	id: number;
 	display_name: string;
+	avatar_key: string | null;
 }>();
 ---
 
@@ -23,7 +24,19 @@ const { results: members } = await env.DB.prepare(
 				<form method="POST" action="/api/whoami" class="flex flex-col gap-2 mb-6">
 					<input type="hidden" name="redirect" value={redirect} />
 					{members.map((m) => (
-						<button type="submit" name="memberId" value={m.id} class="btn-outline">
+						<button type="submit" name="memberId" value={m.id} class="btn-outline flex items-center gap-3">
+							{m.avatar_key ? (
+								<img src={`/img/${m.avatar_key}?w=64`} alt="" class="h-8 w-8 rounded-full object-cover shrink-0" />
+							) : (
+								<span class="h-8 w-8 rounded-full bg-navy/10 text-navy flex items-center justify-center text-xs font-bold shrink-0">
+									{m.display_name
+										.split(' ')
+										.map((p) => p[0])
+										.join('')
+										.slice(0, 2)
+										.toUpperCase()}
+								</span>
+							)}
 							{m.display_name}
 						</button>
 					))}

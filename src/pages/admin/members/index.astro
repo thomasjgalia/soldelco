@@ -1,0 +1,54 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const { results: members } = await env.DB.prepare(
+	"SELECT id, display_name, email, phone, passcode FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+).all<{ id: number; display_name: string; email: string | null; phone: string | null; passcode: string | null }>();
+---
+
+<Layout title="Members">
+	<h1 class="page-title">Members</h1>
+	<p class="text-sm text-stone-500 mb-4">
+		If someone forgets their passcode, reset it here -- they'll be able to set a new one next time they edit their
+		profile, no proof required (same as first-time setup).
+	</p>
+
+	<table class="min-w-full text-sm border-collapse">
+		<thead>
+			<tr class="border-b border-stone-300 text-left">
+				<th class="py-2 pr-4">Name</th>
+				<th class="py-2 pr-4">Email</th>
+				<th class="py-2 pr-4">Phone</th>
+				<th class="py-2 pr-4">Passcode</th>
+				<th class="py-2 pr-4" />
+			</tr>
+		</thead>
+		<tbody>
+			{
+				members.map((m) => (
+					<tr class="border-b border-stone-200">
+						<td class="py-2 pr-4 font-medium">{m.display_name}</td>
+						<td class="py-2 pr-4 text-stone-500">{m.email ?? '—'}</td>
+						<td class="py-2 pr-4 text-stone-500">{m.phone ?? '—'}</td>
+						<td class="py-2 pr-4 text-stone-500">{m.passcode ? 'set' : 'not set'}</td>
+						<td class="py-2 pr-4">
+							{m.passcode && (
+								<form method="POST" action={`/api/admin/members/${m.id}/reset-passcode`}>
+									<button type="submit" class="link-danger text-xs">
+										reset passcode
+									</button>
+								</form>
+							)}
+						</td>
+					</tr>
+				))
+			}
+		</tbody>
+	</table>
+</Layout>

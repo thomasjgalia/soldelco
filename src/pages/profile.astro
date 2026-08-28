@@ -1,0 +1,94 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect('/whoami?redirect=/profile');
+
+const member = await env.DB.prepare('SELECT id, display_name, avatar_key, email, phone, passcode FROM members WHERE id = ?')
+	.bind(identity.memberId)
+	.first<{ id: number; display_name: string; avatar_key: string | null; email: string | null; phone: string | null; passcode: string | null }>();
+
+if (!member) return Astro.redirect('/whoami');
+
+const hasPasscode = !!member.passcode;
+const error = Astro.url.searchParams.get('error');
+const initials = member.display_name
+	.split(' ')
+	.map((p) => p[0])
+	.join('')
+	.slice(0, 2)
+	.toUpperCase();
+---
+
+<Layout title="My Profile">
+	<h1 class="page-title">My Profile</h1>
+
+	{error === 'passcode' && (
+		<p class="text-sm text-flag-red bg-flag-red/10 border border-flag-red/30 rounded-lg px-3 py-2 mb-4 max-w-sm">
+			That passcode wasn't right. Nothing was saved.
+		</p>
+	)}
+
+	<form method="POST" action="/api/profile" enctype="multipart/form-data" class="form-stack">
+		<div class="flex items-center gap-4 mb-2">
+			{member.avatar_key ? (
+				<img src={`/img/${member.avatar_key}?w=160`} alt={member.display_name} class="h-20 w-20 rounded-full object-cover" />
+			) : (
+				<div class="h-20 w-20 rounded-full bg-navy text-white flex items-center justify-center text-xl font-bold">{initials}</div>
+			)}
+			<div>
+				<p class="font-medium">{member.display_name}</p>
+				<label class="text-sm link cursor-pointer">
+					Change photo
+					<input type="file" name="photo" accept="image/*" class="hidden" />
+				</label>
+			</div>
+		</div>
+
+		<label class="field-label">
+			Email
+			<input type="email" name="email" value={member.email ?? ''} class="field mt-1" />
+		</label>
+		<label class="field-label">
+			Phone
+			<input type="tel" name="phone" value={member.phone ?? ''} class="field mt-1" />
+		</label>
+
+		{hasPasscode ? (
+			<>
+				<label class="field-label">
+					Current passcode
+					<input type="password" name="currentPasscode" required class="field mt-1" />
+				</label>
+				<label class="field-label">
+					New passcode (leave blank to keep it)
+					<input type="password" name="newPasscode" class="field mt-1" />
+				</label>
+			</>
+		) : (
+			<label class="field-label">
+				Set a passcode (optional)
+				<input type="password" name="newPasscode" class="field mt-1" />
+				<span class="block text-xs text-stone-500 mt-1">
+					Once set, only someone who knows it can change this profile's photo or info. Picking your name to RSVP or post stays
+					open either way.
+				</span>
+			</label>
+		)}
+
+		<button type="submit" class="btn">Save</button>
+	</form>
+</Layout>
+
+<script>
+	// Swap the "Change photo" label for the picked filename so there's some
+	// feedback that a file was actually selected before hitting Save.
+	const input = document.querySelector<HTMLInputElement>('input[name="photo"]');
+	const label = input?.closest('label');
+	input?.addEventListener('change', () => {
+		if (input.files?.[0] && label) {
+			label.firstChild!.textContent = input.files[0].name;
+		}
+	});
+</script>

@@ -37,3 +37,20 @@ export async function uploadPhotosToAlbum(
 			.run();
 	}
 }
+
+// Stores a member's profile photo and deletes their previous one (unlike
+// album photos, which intentionally accumulate, a profile has exactly one
+// current avatar -- leaving old ones in R2 would just be orphaned storage).
+export async function uploadAvatar(env: Env, memberId: number, file: File, previousAvatarKey: string | null): Promise<string | null> {
+	if (file.size === 0 || !file.type.startsWith('image/')) return null;
+
+	const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+	const key = `avatars/${memberId}-${crypto.randomUUID()}.${ext}`;
+
+	await env.PHOTOS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+	await env.DB.prepare('UPDATE members SET avatar_key = ? WHERE id = ?').bind(key, memberId).run();
+
+	if (previousAvatarKey) await env.PHOTOS.delete(previousAvatarKey);
+
+	return key;
+}

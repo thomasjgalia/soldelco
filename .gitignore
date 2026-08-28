@@ -24,6 +24,9 @@ photoscloudinary/
 # player roster export (has emails/phone numbers, not committed)
 players-export.csv
 
+# raw headshot photos (migrated to R2, not committed)
+solheadshots/
+
 # one-time Cloudinary migration input (source of truth becomes D1 after migration)
 scripts/cloudinary-albums.json
 scripts/generated-migration.sql
