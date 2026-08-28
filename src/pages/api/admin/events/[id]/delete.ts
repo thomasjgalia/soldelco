@@ -10,15 +10,6 @@ export const POST: APIRoute = async ({ params, locals, redirect }) => {
 
 	const eventId = Number(params.id);
 
-	const { results: forms } = await env.DB.prepare('SELECT id FROM rsvp_forms WHERE event_id = ?')
-		.bind(eventId)
-		.all<{ id: number }>();
-
-	for (const form of forms) {
-		await env.DB.prepare('DELETE FROM rsvp_responses WHERE form_id = ?').bind(form.id).run();
-	}
-	await env.DB.prepare('DELETE FROM rsvp_forms WHERE event_id = ?').bind(eventId).run();
-
 	const { results: competitions } = await env.DB.prepare('SELECT id FROM competitions WHERE event_id = ?')
 		.bind(eventId)
 		.all<{ id: number }>();
@@ -31,6 +22,7 @@ export const POST: APIRoute = async ({ params, locals, redirect }) => {
 			await env.DB.prepare('DELETE FROM team_members WHERE team_id = ?').bind(team.id).run();
 		}
 		await env.DB.prepare('DELETE FROM teams WHERE competition_id = ?').bind(competition.id).run();
+		await env.DB.prepare('DELETE FROM rsvp_responses WHERE competition_id = ?').bind(competition.id).run();
 	}
 	await env.DB.prepare('DELETE FROM competitions WHERE event_id = ?').bind(eventId).run();
 

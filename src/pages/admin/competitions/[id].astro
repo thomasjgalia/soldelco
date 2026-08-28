@@ -10,39 +10,62 @@ if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
 
 const id = Number(Astro.params.id);
 const competition = await env.DB.prepare(
-	'SELECT competitions.id, competitions.kind, competitions.title, competitions.event_id, events.title as event_title FROM competitions JOIN events ON events.id = competitions.event_id WHERE competitions.id = ?',
+	'SELECT competitions.id, competitions.kind, competitions.title, competitions.event_id, competitions.rsvp_closes_at, events.title as event_title FROM competitions JOIN events ON events.id = competitions.event_id WHERE competitions.id = ?',
 )
 	.bind(id)
-	.first<{ id: number; kind: string; title: string; event_id: number; event_title: string }>();
+	.first<{ id: number; kind: string; title: string; event_id: number; rsvp_closes_at: string | null; event_title: string }>();
 
 if (!competition) return Astro.redirect('/admin/events');
 
-const { results: teams } = await env.DB.prepare('SELECT id, competition_id, name, score, placement FROM teams WHERE competition_id = ?')
-	.bind(id)
-	.all<Team>();
+const isScored = competition.kind !== 'rsvp_only';
 
-const { results: teamMembers } = await env.DB.prepare(
-	`SELECT team_members.team_id, members.display_name
-	 FROM team_members JOIN members ON members.id = team_members.member_id
-	 WHERE team_members.team_id IN (SELECT id FROM teams WHERE competition_id = ?)`,
+const { results: rsvps } = await env.DB.prepare(
+	`SELECT rsvp_responses.attending, rsvp_responses.updated_at, members.display_name
+	 FROM rsvp_responses
+	 JOIN members ON members.id = rsvp_responses.member_id
+	 WHERE competition_id = ?
+	 ORDER BY rsvp_responses.attending, members.display_name`,
 )
 	.bind(id)
-	.all<{ team_id: number; display_name: string }>();
+	.all<{ attending: string; updated_at: string; display_name: string }>();
 
-const rosterByTeam = new Map<number, string[]>();
-for (const tm of teamMembers) {
-	if (!rosterByTeam.has(tm.team_id)) rosterByTeam.set(tm.team_id, []);
-	rosterByTeam.get(tm.team_id)!.push(tm.display_name);
+const yesCount = rsvps.filter((r) => r.attending === 'yes').length;
+const maybeCount = rsvps.filter((r) => r.attending === 'maybe').length;
+const noCount = rsvps.filter((r) => r.attending === 'no').length;
+
+let sorted: Team[] = [];
+let winners = new Set<number>();
+let rosterByTeam = new Map<number, string[]>();
+let members: { id: number; display_name: string }[] = [];
+
+if (isScored) {
+	const { results: teams } = await env.DB.prepare('SELECT id, competition_id, name, score, placement FROM teams WHERE competition_id = ?')
+		.bind(id)
+		.all<Team>();
+
+	const { results: teamMembers } = await env.DB.prepare(
+		`SELECT team_members.team_id, members.display_name
+		 FROM team_members JOIN members ON members.id = team_members.member_id
+		 WHERE team_members.team_id IN (SELECT id FROM teams WHERE competition_id = ?)`,
+	)
+		.bind(id)
+		.all<{ team_id: number; display_name: string }>();
+
+	for (const tm of teamMembers) {
+		if (!rosterByTeam.has(tm.team_id)) rosterByTeam.set(tm.team_id, []);
+		rosterByTeam.get(tm.team_id)!.push(tm.display_name);
+	}
+
+	sorted = sortTeams(teams);
+	winners = new Set(winningTeams(teams).map((t) => t.id));
+
+	const { results: memberRows } = await env.DB.prepare(
+		"SELECT id, display_name FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+	).all<{ id: number; display_name: string }>();
+	members = memberRows;
 }
 
-const sorted = sortTeams(teams);
-const winners = new Set(winningTeams(teams).map((t) => t.id));
-
-const { results: members } = await env.DB.prepare(
-	"SELECT id, display_name FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
-).all<{ id: number; display_name: string }>();
-
-const isGolf = competition.kind === 'golf_scramble';
+const isGolf = competition.kind === 'score';
 ---
 
 <Layout title={competition.title}>
@@ -51,68 +74,103 @@ const isGolf = competition.kind === 'golf_scramble';
 	</a>
 	<h1 class="page-title mt-1">{competition.title}</h1>
 
-	<table class="min-w-full text-sm border-collapse mb-6">
+	<h2 class="section-title">RSVPs</h2>
+	<p class="text-sm text-stone-500 mb-3">
+		{yesCount} yes, {maybeCount} maybe, {noCount} no
+	</p>
+	<table class="min-w-full max-w-sm text-sm border-collapse mb-8">
 		<thead>
 			<tr class="border-b border-stone-300 text-left">
-				<th class="py-2 pr-4">Team</th>
-				<th class="py-2 pr-4">Roster</th>
-				<th class="py-2 pr-4">{isGolf ? 'Score' : 'Placement'}</th>
-				<th class="py-2 pr-4" />
+				<th class="py-2 pr-4">Name</th>
+				<th class="py-2 pr-4">Response</th>
+				<th class="py-2 pr-4">Updated</th>
 			</tr>
 		</thead>
 		<tbody>
 			{
-				sorted.map((team) => (
+				rsvps.map((row) => (
 					<tr class="border-b border-stone-200">
-						<td class="py-2 pr-4 font-medium">
-							{team.name} {winners.has(team.id) && '🏆'}
-						</td>
-						<td class="py-2 pr-4">{(rosterByTeam.get(team.id) ?? []).join(', ')}</td>
-						<td class="py-2 pr-4">{isGolf ? team.score : team.placement}</td>
-						<td class="py-2 pr-4">
-							<form method="POST" action={`/api/admin/teams/${team.id}/delete`}>
-								<button type="submit" class="link-danger text-xs">
-									delete
-								</button>
-							</form>
-						</td>
+						<td class="py-2 pr-4 font-medium">{row.display_name}</td>
+						<td class="py-2 pr-4 capitalize">{row.attending}</td>
+						<td class="py-2 pr-4 text-stone-500">{row.updated_at}</td>
 					</tr>
 				))
 			}
-			{sorted.length === 0 && (
+			{rsvps.length === 0 && (
 				<tr>
-					<td class="py-4 text-stone-500" colspan="4">
-						No teams yet.
+					<td class="py-4 text-stone-500" colspan="3">
+						No responses yet.
 					</td>
 				</tr>
 			)}
 		</tbody>
 	</table>
 
-	<details class="max-w-sm mb-8">
-		<summary class="cursor-pointer text-stone-600 underline mb-3">Add team</summary>
-		<form method="POST" action={`/api/admin/competitions/${competition.id}/teams`} class="flex flex-col gap-3">
-			<input type="text" name="name" required placeholder="Team name" class="field" />
-			<label class="field-label">
-				{isGolf ? 'Final score' : 'Placement (1 = 1st)'}
-				<input type="number" name={isGolf ? 'score' : 'placement'} required class="field mt-1" />
-			</label>
-			<fieldset class="flex flex-col gap-1">
-				<legend class="field-label mb-1">Roster</legend>
-				{
-					members.map((m) => (
-						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" name="memberIds" value={m.id} />
-							{m.display_name}
+	{
+		isScored && (
+			<>
+				<h2 class="section-title">Results</h2>
+				<table class="min-w-full text-sm border-collapse mb-6">
+					<thead>
+						<tr class="border-b border-stone-300 text-left">
+							<th class="py-2 pr-4">Team</th>
+							<th class="py-2 pr-4">Roster</th>
+							<th class="py-2 pr-4">{isGolf ? 'Score' : 'Placement'}</th>
+							<th class="py-2 pr-4" />
+						</tr>
+					</thead>
+					<tbody>
+						{sorted.map((team) => (
+							<tr class="border-b border-stone-200">
+								<td class="py-2 pr-4 font-medium">
+									{team.name} {winners.has(team.id) && '🏆'}
+								</td>
+								<td class="py-2 pr-4">{(rosterByTeam.get(team.id) ?? []).join(', ')}</td>
+								<td class="py-2 pr-4">{isGolf ? team.score : team.placement}</td>
+								<td class="py-2 pr-4">
+									<form method="POST" action={`/api/admin/teams/${team.id}/delete`}>
+										<button type="submit" class="link-danger text-xs">
+											delete
+										</button>
+									</form>
+								</td>
+							</tr>
+						))}
+						{sorted.length === 0 && (
+							<tr>
+								<td class="py-4 text-stone-500" colspan="4">
+									No teams yet.
+								</td>
+							</tr>
+						)}
+					</tbody>
+				</table>
+
+				<details class="max-w-sm mb-8">
+					<summary class="cursor-pointer text-stone-600 underline mb-3">Add team</summary>
+					<form method="POST" action={`/api/admin/competitions/${competition.id}/teams`} class="flex flex-col gap-3">
+						<input type="text" name="name" required placeholder="Team name" class="field" />
+						<label class="field-label">
+							{isGolf ? 'Final score' : 'Placement (1 = 1st)'}
+							<input type="number" name={isGolf ? 'score' : 'placement'} required class="field mt-1" />
 						</label>
-					))
-				}
-			</fieldset>
-			<button type="submit" class="btn">Add team</button>
-		</form>
-	</details>
+						<fieldset class="flex flex-col gap-1">
+							<legend class="field-label mb-1">Roster</legend>
+							{members.map((m) => (
+								<label class="flex items-center gap-2 text-sm">
+									<input type="checkbox" name="memberIds" value={m.id} />
+									{m.display_name}
+								</label>
+							))}
+						</fieldset>
+						<button type="submit" class="btn">Add team</button>
+					</form>
+				</details>
+			</>
+		)
+	}
 
 	<form method="POST" action={`/api/admin/competitions/${competition.id}/delete`}>
-		<button type="submit" class="link-danger">Delete this competition</button>
+		<button type="submit" class="link-danger">Delete this activity</button>
 	</form>
 </Layout>

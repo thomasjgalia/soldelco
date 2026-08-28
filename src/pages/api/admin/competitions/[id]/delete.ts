@@ -21,6 +21,7 @@ export const POST: APIRoute = async ({ params, locals, redirect }) => {
 		await env.DB.prepare('DELETE FROM team_members WHERE team_id = ?').bind(team.id).run();
 	}
 	await env.DB.prepare('DELETE FROM teams WHERE competition_id = ?').bind(competitionId).run();
+	await env.DB.prepare('DELETE FROM rsvp_responses WHERE competition_id = ?').bind(competitionId).run();
 	await env.DB.prepare('DELETE FROM competitions WHERE id = ?').bind(competitionId).run();
 
 	return redirect(competition ? `/admin/events/${competition.event_id}` : '/admin/events');

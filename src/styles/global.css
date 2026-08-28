@@ -9,6 +9,7 @@
 	--color-navy-dark: #071f3f;
 	--color-flag-red: #b31942;
 	--color-flag-red-dark: #8f1435;
+	--color-success: #15803d;
 }
 
 /*
@@ -67,5 +68,23 @@
 
 	.form-stack {
 		@apply flex max-w-sm flex-col gap-3;
+	}
+
+	/* Compact inline RSVP buttons (check / maybe / x), sized for a row next
+	   to an activity title rather than a full-width tap target. */
+	.rsvp-btn {
+		@apply flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-stone-300 text-sm font-bold text-stone-400 hover:border-navy hover:text-navy;
+	}
+
+	.rsvp-btn-yes.is-selected {
+		@apply border-success bg-success text-white hover:border-success hover:text-white;
+	}
+
+	.rsvp-btn-maybe.is-selected {
+		@apply border-stone-500 bg-stone-500 text-white hover:border-stone-500 hover:text-white;
+	}
+
+	.rsvp-btn-no.is-selected {
+		@apply border-flag-red bg-flag-red text-white hover:border-flag-red hover:text-white;
 	}
 }

@@ -18,7 +18,7 @@ export const POST: APIRoute = async ({ request, params, locals, redirect }) => {
 	const name = String(form.get('name') ?? '').trim();
 	if (!name) return redirect(`/admin/competitions/${competitionId}`);
 
-	const isGolf = competition.kind === 'golf_scramble';
+	const isGolf = competition.kind === 'score';
 	const scoreRaw = form.get('score');
 	const placementRaw = form.get('placement');
 	const score = isGolf && scoreRaw ? Number(scoreRaw) : null;

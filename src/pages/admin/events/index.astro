@@ -9,10 +9,10 @@ if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
 
 const { results: events } = await env.DB.prepare(
 	`SELECT events.id, events.slug, events.title, events.starts_at,
-		(SELECT COUNT(*) FROM rsvp_forms WHERE rsvp_forms.event_id = events.id) as form_count
+		(SELECT COUNT(*) FROM competitions WHERE competitions.event_id = events.id) as activity_count
 	 FROM events
 	 ORDER BY events.starts_at DESC`,
-).all<{ id: number; slug: string; title: string; starts_at: string | null; form_count: number }>();
+).all<{ id: number; slug: string; title: string; starts_at: string | null; activity_count: number }>();
 ---
 
 <Layout title="Manage events">
@@ -39,7 +39,7 @@ const { results: events } = await env.DB.prepare(
 					<a href={`/admin/events/${event.id}`} class="font-medium hover:underline">
 						{event.title}
 					</a>
-					<span class="text-sm text-stone-500">{event.form_count} RSVP form{event.form_count === 1 ? '' : 's'}</span>
+					<span class="text-sm text-stone-500">{event.activity_count} activit{event.activity_count === 1 ? 'y' : 'ies'}</span>
 				</li>
 			))
 		}

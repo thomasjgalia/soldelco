@@ -23,52 +23,52 @@ const { results: albums } = await env.DB.prepare('SELECT slug, title FROM albums
 	.bind(event.id)
 	.all<{ slug: string; title: string }>();
 
-const { results: rawForms } = await env.DB.prepare(
-	'SELECT id, title, closes_at FROM rsvp_forms WHERE event_id = ? ORDER BY created_at',
+const { results: rawActivities } = await env.DB.prepare(
+	'SELECT id, kind, title, rsvp_closes_at FROM competitions WHERE event_id = ? ORDER BY played_on, created_at',
 )
 	.bind(event.id)
-	.all<{ id: number; title: string; closes_at: string | null }>();
+	.all<{ id: number; kind: string; title: string; rsvp_closes_at: string | null }>();
 
-const forms = await Promise.all(
-	rawForms.map(async (form) => {
-		const existing = identity
-			? await env.DB.prepare('SELECT attending FROM rsvp_responses WHERE form_id = ? AND member_id = ?')
-					.bind(form.id, identity.memberId)
+const activities = await Promise.all(
+	rawActivities.map(async (activity) => {
+		const myResponse = identity
+			? await env.DB.prepare('SELECT attending FROM rsvp_responses WHERE competition_id = ? AND member_id = ?')
+					.bind(activity.id, identity.memberId)
 					.first<{ attending: string | null }>()
 			: null;
-		const closed = form.closes_at ? new Date(form.closes_at) < new Date() : false;
-		return { ...form, attending: existing?.attending ?? null, closed };
-	}),
-);
+		const rsvpClosed = activity.rsvp_closes_at ? new Date(activity.rsvp_closes_at) < new Date() : false;
 
-const { results: rawCompetitions } = await env.DB.prepare(
-	'SELECT id, kind, title FROM competitions WHERE event_id = ? ORDER BY played_on',
-)
-	.bind(event.id)
-	.all<{ id: number; kind: string; title: string }>();
-
-const competitions = await Promise.all(
-	rawCompetitions.map(async (c) => {
-		const { results: teams } = await env.DB.prepare('SELECT id, competition_id, name, score, placement FROM teams WHERE competition_id = ?')
-			.bind(c.id)
-			.all<Team>();
-		const { results: teamMembers } = await env.DB.prepare(
-			`SELECT team_members.team_id, members.display_name
-			 FROM team_members JOIN members ON members.id = team_members.member_id
-			 WHERE team_members.team_id IN (SELECT id FROM teams WHERE competition_id = ?)`,
-		)
-			.bind(c.id)
-			.all<{ team_id: number; display_name: string }>();
-
-		const rosterByTeam = new Map<number, string[]>();
-		for (const tm of teamMembers) {
-			if (!rosterByTeam.has(tm.team_id)) rosterByTeam.set(tm.team_id, []);
-			rosterByTeam.get(tm.team_id)!.push(tm.display_name);
+		let teams: Team[] = [];
+		let rosterByTeam = new Map<number, string[]>();
+		let winnerIds = new Set<number>();
+		if (activity.kind !== 'rsvp_only') {
+			const { results: teamRows } = await env.DB.prepare('SELECT id, competition_id, name, score, placement FROM teams WHERE competition_id = ?')
+				.bind(activity.id)
+				.all<Team>();
+			const { results: teamMembers } = await env.DB.prepare(
+				`SELECT team_members.team_id, members.display_name
+				 FROM team_members JOIN members ON members.id = team_members.member_id
+				 WHERE team_members.team_id IN (SELECT id FROM teams WHERE competition_id = ?)`,
+			)
+				.bind(activity.id)
+				.all<{ team_id: number; display_name: string }>();
+			for (const tm of teamMembers) {
+				if (!rosterByTeam.has(tm.team_id)) rosterByTeam.set(tm.team_id, []);
+				rosterByTeam.get(tm.team_id)!.push(tm.display_name);
+			}
+			teams = sortTeams(teamRows);
+			winnerIds = new Set(winningTeams(teamRows).map((t) => t.id));
 		}
 
-		const sorted = sortTeams(teams);
-		const winnerIds = new Set(winningTeams(teams).map((t) => t.id));
-		return { ...c, isGolf: c.kind === 'golf_scramble', teams: sorted, rosterByTeam, winnerIds };
+		return {
+			...activity,
+			isScored: activity.kind === 'score',
+			attending: myResponse?.attending ?? null,
+			rsvpClosed,
+			teams,
+			rosterByTeam,
+			winnerIds,
+		};
 	}),
 );
 ---
@@ -101,22 +101,42 @@ const competitions = await Promise.all(
 	}
 
 	{
-		competitions.map((c) => (
-			<div class="mb-6">
-				<h2 class="section-title">{c.title}</h2>
-				{c.teams.length === 0 ? (
-					<p class="text-stone-500 text-sm">Results not entered yet.</p>
-				) : (
-					<ul class="flex flex-col divide-y divide-stone-200 max-w-sm">
-						{c.teams.map((team) => (
+		activities.map((a) => (
+			<div class="mb-5 max-w-sm">
+				<div class="flex items-center justify-between gap-2">
+					<h2 class="section-title mb-0">{a.title}</h2>
+					{a.rsvpClosed ? (
+						<span class="text-xs text-stone-500 shrink-0">RSVPs closed</span>
+					) : !identity ? (
+						<a href={`/whoami?redirect=/events/${slug}`} class="link text-xs shrink-0">
+							Pick your name
+						</a>
+					) : (
+						<form method="POST" action={`/api/rsvp/${a.id}`} class="flex gap-1 shrink-0">
+							<button type="submit" name="attending" value="yes" class={`rsvp-btn rsvp-btn-yes ${a.attending === 'yes' ? 'is-selected' : ''}`} aria-label="Yes, I'm in" title="Yes">
+								&#10003;
+							</button>
+							<button type="submit" name="attending" value="maybe" class={`rsvp-btn rsvp-btn-maybe ${a.attending === 'maybe' ? 'is-selected' : ''}`} aria-label="Maybe" title="Maybe">
+								?
+							</button>
+							<button type="submit" name="attending" value="no" class={`rsvp-btn rsvp-btn-no ${a.attending === 'no' ? 'is-selected' : ''}`} aria-label="Can't make it" title="No">
+								&#10007;
+							</button>
+						</form>
+					)}
+				</div>
+
+				{a.teams.length > 0 && (
+					<ul class="flex flex-col divide-y divide-stone-200 mt-2">
+						{a.teams.map((team) => (
 							<li class="py-2 flex items-center justify-between gap-4">
 								<div>
 									<p class="font-medium">
-										{team.name} {c.winnerIds.has(team.id) && '🏆'}
+										{team.name} {a.winnerIds.has(team.id) && '🏆'}
 									</p>
-									<p class="text-xs text-stone-500">{(c.rosterByTeam.get(team.id) ?? []).join(', ')}</p>
+									<p class="text-xs text-stone-500">{(a.rosterByTeam.get(team.id) ?? []).join(', ')}</p>
 								</div>
-								<span class="text-sm text-stone-500 shrink-0">{c.isGolf ? team.score : `#${team.placement}`}</span>
+								<span class="text-sm text-stone-500 shrink-0">{a.isScored ? team.score : `#${team.placement}`}</span>
 							</li>
 						))}
 					</ul>
@@ -124,37 +144,5 @@ const competitions = await Promise.all(
 			</div>
 		))
 	}
-
-	{
-		forms.map((form) => (
-			<div class="mb-8 max-w-sm">
-				<h2 class="section-title">{form.title}</h2>
-				{form.closed ? (
-					<p class="text-stone-500 text-sm">RSVPs are closed.</p>
-				) : !identity ? (
-					<p class="text-stone-500 text-sm">
-						<a href={`/whoami?redirect=/events/${slug}`} class="link">
-							Pick your name
-						</a>{' '}
-						to RSVP.
-					</p>
-				) : (
-					<div class="flex gap-2">
-						<form method="POST" action={`/api/rsvp/${form.id}`} class="flex-1">
-							<input type="hidden" name="attending" value="yes" />
-							<button type="submit" class={form.attending === 'yes' ? 'btn w-full' : 'btn-outline w-full'}>
-								Yes, I'm in
-							</button>
-						</form>
-						<form method="POST" action={`/api/rsvp/${form.id}`} class="flex-1">
-							<input type="hidden" name="attending" value="no" />
-							<button type="submit" class={form.attending === 'no' ? 'btn w-full' : 'btn-outline w-full'}>
-								Can't make it
-							</button>
-						</form>
-					</div>
-				)}
-			</div>
-		))
-	}
+	{activities.length === 0 && <p class="text-stone-500 text-sm">Nothing planned yet.</p>}
 </Layout>
