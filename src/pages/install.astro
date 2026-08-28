@@ -1,0 +1,87 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const identity = Astro.locals.identity;
+---
+
+<Layout title="Install the App">
+	<h1 class="page-title">Install SOL</h1>
+	<p class="text-stone-600 mb-8">
+		Add SOL to your home screen for a real app-like experience -- full screen, its own icon, and push notifications for
+		replies, tags, and announcements.
+	</p>
+
+	<section class="mb-8">
+		<h2 class="section-title">iPhone / iPad (Safari)</h2>
+		<ol class="list-decimal list-inside space-y-2 text-sm text-stone-700">
+			<li>
+				Open this site in <strong>Safari</strong> -- only Safari can add to your home screen on iOS, Chrome and other
+				browsers can't.
+			</li>
+			<li>Tap the <strong>Share</strong> icon (a square with an arrow pointing up) in the toolbar.</li>
+			<li>
+				Scroll down and tap <strong>"Add to Home Screen."</strong>
+			</li>
+			<li>
+				Tap <strong>"Add"</strong> in the top right.
+			</li>
+		</ol>
+		<p class="text-xs text-stone-500 mt-2">
+			Then open SOL from the new icon on your home screen (not from Safari) before enabling notifications below.
+		</p>
+	</section>
+
+	<section class="mb-8">
+		<h2 class="section-title">Android (Chrome)</h2>
+		<button type="button" id="android-install-btn" class="btn hidden mb-2">
+			Install app
+		</button>
+		<p id="android-fallback" class="text-sm text-stone-700">
+			Tap the menu (⋮) in the top right, then <strong>"Install app"</strong> or <strong>"Add to Home screen."</strong>
+		</p>
+	</section>
+
+	<section>
+		<h2 class="section-title">Enable notifications</h2>
+		{
+			identity ? (
+				<>
+					<button type="button" class="push-opt-in-btn btn hidden" />
+					<p class="text-xs text-stone-500 mt-2">
+						Once you've installed it above, open SOL from its home screen icon (not the browser) before tapping this --
+						on iPhone, notifications only work from the installed app.
+					</p>
+				</>
+			) : (
+				<p class="text-sm text-stone-500">
+					<a href="/whoami?redirect=/install" class="link">
+						Pick your name
+					</a>{' '}
+					first, then come back here.
+				</p>
+			)
+		}
+	</section>
+</Layout>
+
+<script>
+	// Android/Chrome fires this when it decides the site is installable,
+	// which lets us show a real one-tap Install button instead of just
+	// pointing people at the browser menu. There's no equivalent on iOS
+	// Safari -- that side stays fully manual, see the instructions above.
+	let deferredPrompt: any = null;
+	window.addEventListener('beforeinstallprompt', (e) => {
+		e.preventDefault();
+		deferredPrompt = e;
+		const btn = document.getElementById('android-install-btn');
+		const fallback = document.getElementById('android-fallback');
+		btn?.classList.remove('hidden');
+		fallback?.classList.add('hidden');
+		btn?.addEventListener('click', async () => {
+			deferredPrompt.prompt();
+			await deferredPrompt.userChoice;
+			deferredPrompt = null;
+			btn.classList.add('hidden');
+		});
+	});
+</script>

@@ -65,20 +65,23 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 						<a href="/events" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Events</a>
 						<a href="/records" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Records</a>
 						<a href="/members" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Sons of Liberty</a>
+						<a href="/install" class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline">Install</a>
 						<a
 							href={EXTERNAL_LINKS.golf}
 							target="_blank"
 							rel="noopener noreferrer"
-							class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
+							class="py-1 flex items-center gap-1.5 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
 						>
+							<img src="/golf-favicon.png" alt="" class="h-4 w-4 shrink-0" />
 							Golf
 						</a>
 						<a
 							href={EXTERNAL_LINKS.cornhole}
 							target="_blank"
 							rel="noopener noreferrer"
-							class="py-1 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
+							class="py-1 flex items-center gap-1.5 text-stone-900 hover:text-navy hover:underline sm:py-0 sm:text-white sm:hover:underline"
 						>
+							<img src="/cornhole-favicon.png" alt="" class="h-4 w-4 shrink-0" />
 							Cornhole
 						</a>
 						{admin && (
@@ -151,7 +154,7 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 						</a>
 					)
 				}
-				{identity && <button id="push-opt-in" type="button" class="hidden underline shrink-0" />}
+				{identity && <button type="button" class="push-opt-in-btn hidden underline shrink-0" />}
 			</div>
 		</footer>
 		{identity && <span id="vapid-public-key" data-key={VAPID_PUBLIC_KEY} class="hidden" />}
@@ -189,10 +192,14 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 		return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 	}
 
+	// Every push-opt-in button on the page (the footer's, and the Install
+	// page's bigger one) shares this one registration/subscription -- there's
+	// only ever one subscription per device regardless of how many buttons
+	// can trigger it.
 	async function initPush() {
-		const button = document.getElementById('push-opt-in') as HTMLButtonElement | null;
+		const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.push-opt-in-btn'));
 		const keyEl = document.getElementById('vapid-public-key');
-		if (!button || !keyEl) return; // not signed in -- nothing to wire up
+		if (buttons.length === 0 || !keyEl) return; // not signed in -- nothing to wire up
 
 		const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 		const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
@@ -201,9 +208,11 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 		if (!supported) return; // browser can't do push at all -- stay hidden
 
 		if (isIOS && !isStandalone) {
-			button.textContent = 'Add to Home Screen to get notifications';
-			button.disabled = true;
-			button.classList.remove('hidden');
+			for (const button of buttons) {
+				button.textContent = 'Add to Home Screen to get notifications';
+				button.disabled = true;
+				button.classList.remove('hidden');
+			}
 			return;
 		}
 
@@ -211,11 +220,13 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 
 		async function refreshLabel() {
 			const existing = await registration.pushManager.getSubscription();
-			button!.textContent = existing ? 'Notifications on — tap to turn off' : 'Enable notifications';
-			button!.classList.remove('hidden');
+			for (const button of buttons) {
+				button.textContent = existing ? 'Notifications on — tap to turn off' : 'Enable notifications';
+				button.classList.remove('hidden');
+			}
 		}
 
-		button.addEventListener('click', async () => {
+		async function toggle() {
 			const existing = await registration.pushManager.getSubscription();
 			if (existing) {
 				await fetch('/api/push/unsubscribe', {
@@ -241,7 +252,11 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 				body: JSON.stringify(subscription.toJSON()),
 			});
 			await refreshLabel();
-		});
+		}
+
+		for (const button of buttons) {
+			button.addEventListener('click', toggle);
+		}
 
 		await refreshLabel();
 	}
