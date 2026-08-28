@@ -1,0 +1,35 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+
+const { results: members } = await env.DB.prepare(
+	"SELECT id, display_name, avatar_key FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+).all<{ id: number; display_name: string; avatar_key: string | null }>();
+---
+
+<Layout title="Sons of Liberty">
+	<h1 class="page-title">Sons of Liberty</h1>
+
+	<div class="grid grid-cols-3 sm:grid-cols-4 gap-4">
+		{
+			members.map((m) => (
+				<div class="flex flex-col items-center text-center gap-1.5">
+					{m.avatar_key ? (
+						<img src={`/img/${m.avatar_key}?w=160`} alt={m.display_name} class="h-16 w-16 rounded-full object-cover" />
+					) : (
+						<span class="h-16 w-16 rounded-full bg-navy/10 text-navy flex items-center justify-center text-lg font-bold">
+							{m.display_name
+								.split(' ')
+								.map((p) => p[0])
+								.join('')
+								.slice(0, 2)
+								.toUpperCase()}
+						</span>
+					)}
+					<p class="text-xs font-medium leading-tight">{m.display_name}</p>
+				</div>
+			))
+		}
+		{members.length === 0 && <p class="text-stone-500">No members yet.</p>}
+	</div>
+</Layout>
