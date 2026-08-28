@@ -12,22 +12,29 @@ const identity = Astro.locals.identity;
 	</p>
 
 	<section class="mb-8">
-		<h2 class="section-title">iPhone / iPad (Safari)</h2>
-		<ol class="list-decimal list-inside space-y-2 text-sm text-stone-700">
-			<li>
-				Open this site in <strong>Safari</strong> -- only Safari can add to your home screen on iOS, Chrome and other
-				browsers can't.
+		<h2 class="section-title">iPhone / iPad</h2>
+		<ol class="space-y-4 text-sm text-stone-700">
+			<li class="flex flex-col gap-2">
+				<span>
+					1. Tap the <strong>Share</strong> icon (a square with an arrow pointing up) in the toolbar.
+				</span>
+				<img src="/install/1-share.jpeg" alt="Tapping the Share icon in the browser toolbar" class="rounded-lg border border-stone-200 max-w-[260px]" />
 			</li>
-			<li>Tap the <strong>Share</strong> icon (a square with an arrow pointing up) in the toolbar.</li>
-			<li>
-				Scroll down and tap <strong>"Add to Home Screen."</strong>
+			<li class="flex flex-col gap-2">
+				<span>
+					2. Scroll down and tap <strong>"Add to Home Screen."</strong>
+				</span>
+				<img src="/install/2-add-to-home-screen.jpeg" alt="The Add to Home Screen option in the share sheet" class="rounded-lg border border-stone-200 max-w-[260px]" />
 			</li>
-			<li>
-				Tap <strong>"Add"</strong> in the top right.
+			<li class="flex flex-col gap-2">
+				<span>
+					3. Tap <strong>"Add"</strong> in the top right.
+				</span>
+				<img src="/install/3-web-app.jpeg" alt="The Add to Home Screen confirmation screen" class="rounded-lg border border-stone-200 max-w-[260px]" />
 			</li>
 		</ol>
-		<p class="text-xs text-stone-500 mt-2">
-			Then open SOL from the new icon on your home screen (not from Safari) before enabling notifications below.
+		<p class="text-xs text-stone-500 mt-3">
+			Then open SOL from the new icon on your home screen (not from the browser) before enabling notifications below.
 		</p>
 	</section>
 
@@ -67,8 +74,8 @@ const identity = Astro.locals.identity;
 <script>
 	// Android/Chrome fires this when it decides the site is installable,
 	// which lets us show a real one-tap Install button instead of just
-	// pointing people at the browser menu. There's no equivalent on iOS
-	// Safari -- that side stays fully manual, see the instructions above.
+	// pointing people at the browser menu. There's no equivalent on iOS --
+	// that side stays fully manual, see the instructions above.
 	let deferredPrompt: any = null;
 	window.addEventListener('beforeinstallprompt', (e) => {
 		e.preventDefault();
