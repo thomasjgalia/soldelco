@@ -1,0 +1,38 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const { results } = await env.DB.prepare('SELECT COUNT(DISTINCT member_id) as n FROM push_subscriptions').all<{ n: number }>();
+const subscriberCount = results[0]?.n ?? 0;
+const sent = Astro.url.searchParams.get('sent');
+---
+
+<Layout title="Send a notification">
+	<a href="/admin" class="link-muted">&larr; Admin</a>
+	<h1 class="page-title mt-1">Send a notification</h1>
+	<p class="text-sm text-stone-500 mb-4">
+		Goes out as a push notification to everyone who's enabled them ({subscriberCount} member{subscriberCount === 1 ? '' : 's'} right
+		now).
+	</p>
+
+	{sent && (
+		<p class="text-sm text-success bg-success/10 border border-success/30 rounded-lg px-3 py-2 mb-4 max-w-sm">
+			Sent to {sent} device{sent === '1' ? '' : 's'}.
+		</p>
+	)}
+
+	<form method="POST" action="/api/admin/notify" class="form-stack">
+		<input type="text" name="title" required maxlength="60" placeholder="Title (e.g. Don't forget to RSVP!)" class="field" />
+		<textarea name="body" required maxlength="180" placeholder="Message" class="field"></textarea>
+		<label class="field-label">
+			Link to open when tapped (optional)
+			<input type="text" name="url" placeholder="/events/fall-2026" class="field mt-1" />
+		</label>
+		<button type="submit" class="btn">Send now</button>
+	</form>
+</Layout>

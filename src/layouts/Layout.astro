@@ -1,7 +1,7 @@
 ---
 import '../styles/global.css';
 import { env } from 'cloudflare:workers';
-import { EXTERNAL_LINKS } from '../config/site';
+import { EXTERNAL_LINKS, VAPID_PUBLIC_KEY } from '../config/site';
 import { isAdmin } from '../lib/admin';
 
 interface Props {
@@ -32,7 +32,12 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="alternate icon" href="/favicon.ico" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="manifest" href="/manifest.json" />
 		<meta name="theme-color" content="#B31942" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="SOL" />
 		<title>{pageTitle}</title>
 	</head>
 	<body class="min-h-dvh bg-stone-50 text-stone-900 flex flex-col">
@@ -126,7 +131,7 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 		</main>
 
 		<footer class="border-t border-stone-200 bg-white">
-			<div class="mx-auto max-w-3xl px-4 py-3 text-sm text-stone-500 flex items-center justify-between">
+			<div class="mx-auto max-w-3xl px-4 py-3 text-sm text-stone-500 flex items-center justify-between gap-2 flex-wrap">
 				{
 					identity ? (
 						<span>
@@ -145,8 +150,10 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 						</a>
 					)
 				}
+				{identity && <button id="push-opt-in" type="button" class="hidden underline shrink-0" />}
 			</div>
 		</footer>
+		{identity && <span id="vapid-public-key" data-key={VAPID_PUBLIC_KEY} class="hidden" />}
 	</body>
 </html>
 
@@ -164,5 +171,83 @@ const pageTitle = title ? `${title} · SOL` : 'SOL';
 		document.addEventListener('DOMContentLoaded', initNavToggle);
 	} else {
 		initNavToggle();
+	}
+</script>
+
+<script>
+	// Push notifications need: a service worker (to receive push events even
+	// when the site isn't open), the browser's permission, and a saved
+	// PushSubscription. On iOS this whole chain only works once the site has
+	// actually been added to the home screen -- push silently can't work in
+	// a plain Safari tab there -- so the button's label adapts instead of
+	// pretending it'll work everywhere.
+	function urlBase64ToUint8Array(base64: string): Uint8Array {
+		const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+		const base64Safe = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+		const raw = atob(base64Safe);
+		return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+	}
+
+	async function initPush() {
+		const button = document.getElementById('push-opt-in') as HTMLButtonElement | null;
+		const keyEl = document.getElementById('vapid-public-key');
+		if (!button || !keyEl) return; // not signed in -- nothing to wire up
+
+		const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+		const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+		const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+		if (!supported) return; // browser can't do push at all -- stay hidden
+
+		if (isIOS && !isStandalone) {
+			button.textContent = 'Add to Home Screen to get notifications';
+			button.disabled = true;
+			button.classList.remove('hidden');
+			return;
+		}
+
+		const registration = await navigator.serviceWorker.register('/sw.js');
+
+		async function refreshLabel() {
+			const existing = await registration.pushManager.getSubscription();
+			button!.textContent = existing ? 'Notifications on — tap to turn off' : 'Enable notifications';
+			button!.classList.remove('hidden');
+		}
+
+		button.addEventListener('click', async () => {
+			const existing = await registration.pushManager.getSubscription();
+			if (existing) {
+				await fetch('/api/push/unsubscribe', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ endpoint: existing.endpoint }),
+				});
+				await existing.unsubscribe();
+				await refreshLabel();
+				return;
+			}
+
+			const permission = await Notification.requestPermission();
+			if (permission !== 'granted') return;
+
+			const subscription = await registration.pushManager.subscribe({
+				userVisibleOnly: true,
+				applicationServerKey: urlBase64ToUint8Array(keyEl.getAttribute('data-key')!) as BufferSource,
+			});
+			await fetch('/api/push/subscribe', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(subscription.toJSON()),
+			});
+			await refreshLabel();
+		});
+
+		await refreshLabel();
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initPush);
+	} else {
+		initPush();
 	}
 </script>
