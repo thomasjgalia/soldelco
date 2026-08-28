@@ -18,7 +18,10 @@ function parseCard(card) {
 		if (line.startsWith('PHOTO')) continue;
 		const colonIdx = line.indexOf(':');
 		if (colonIdx === -1) continue;
-		const key = line.slice(0, colonIdx).split(';')[0].toUpperCase();
+		// Entries with a custom label (e.g. an "OTHER" email, an extra profile
+		// URL) get grouped under an "item1.", "item2.", ... prefix -- strip it
+		// before matching, or every field on a grouped line is silently missed.
+		const key = line.slice(0, colonIdx).split(';')[0].toUpperCase().replace(/^ITEM\d+\./, '');
 		const value = line.slice(colonIdx + 1);
 		if (key === 'FN') out.FN = value;
 		else if (key === 'TEL') out.TEL.push(value);
