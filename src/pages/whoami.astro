@@ -4,53 +4,88 @@ import { env } from 'cloudflare:workers';
 import { safeRedirect } from '../lib/auth';
 
 const redirect = safeRedirect(Astro.url.searchParams.get('redirect'));
+const requirePasscodeId = Astro.url.searchParams.get('requirePasscode');
+const passcodeError = Astro.url.searchParams.get('error') === '1';
 
-const { results: members } = await env.DB.prepare(
-	"SELECT id, display_name, avatar_key FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
-).all<{
-	id: number;
-	display_name: string;
-	avatar_key: string | null;
-}>();
+const passcodeMember = requirePasscodeId
+	? await env.DB.prepare('SELECT id, display_name, avatar_key FROM members WHERE id = ?')
+			.bind(Number(requirePasscodeId))
+			.first<{ id: number; display_name: string; avatar_key: string | null }>()
+	: null;
+
+const { results: members } = passcodeMember
+	? { results: [] }
+	: await env.DB.prepare(
+			"SELECT id, display_name, avatar_key FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+		).all<{
+			id: number;
+			display_name: string;
+			avatar_key: string | null;
+		}>();
 ---
 
 <Layout title="Who are you?">
 	<div class="max-w-sm mx-auto mt-12">
-		<h1 class="text-2xl font-bold mb-2 text-center">Who are you?</h1>
-		<p class="text-stone-600 mb-6 text-center">Pick your name, or add yourself if you're new.</p>
-
 		{
-			members.length > 0 && (
-				<form method="POST" action="/api/whoami" class="flex flex-col gap-2 mb-6">
-					<input type="hidden" name="redirect" value={redirect} />
-					{members.map((m) => (
-						<button type="submit" name="memberId" value={m.id} class="btn-outline flex items-center gap-3">
-							{m.avatar_key ? (
-								<img src={`/img/${m.avatar_key}?w=64`} alt="" class="h-8 w-8 rounded-full object-cover shrink-0" />
-							) : (
-								<span class="h-8 w-8 rounded-full bg-navy/10 text-navy flex items-center justify-center text-xs font-bold shrink-0">
-									{m.display_name
-										.split(' ')
-										.map((p) => p[0])
-										.join('')
-										.slice(0, 2)
-										.toUpperCase()}
-								</span>
-							)}
-							{m.display_name}
+			passcodeMember ? (
+				<div class="text-center">
+					<h1 class="text-2xl font-bold mb-2">Enter passcode</h1>
+					<p class="text-stone-600 mb-6">for {passcodeMember.display_name}</p>
+					{passcodeError && (
+						<p class="text-sm text-flag-red bg-flag-red/10 border border-flag-red/30 rounded-lg px-3 py-2 mb-4">
+							That passcode wasn't right.
+						</p>
+					)}
+					<form method="POST" action="/api/whoami" class="flex flex-col gap-3">
+						<input type="hidden" name="memberId" value={passcodeMember.id} />
+						<input type="hidden" name="redirect" value={redirect} />
+						<input type="password" name="passcode" required autofocus placeholder="Passcode" class="field-lg" />
+						<button type="submit" class="btn-lg">
+							Continue
 						</button>
-					))}
-				</form>
+					</form>
+					<a href={`/whoami?redirect=${encodeURIComponent(redirect)}`} class="link-muted mt-4 inline-block">
+						&larr; Not {passcodeMember.display_name}?
+					</a>
+				</div>
+			) : (
+				<>
+					<h1 class="text-2xl font-bold mb-2 text-center">Who are you?</h1>
+					<p class="text-stone-600 mb-6 text-center">Pick your name, or add yourself if you're new.</p>
+
+					{members.length > 0 && (
+						<form method="POST" action="/api/whoami" class="flex flex-col gap-2 mb-6">
+							<input type="hidden" name="redirect" value={redirect} />
+							{members.map((m) => (
+								<button type="submit" name="memberId" value={m.id} class="btn-outline flex items-center gap-3">
+									{m.avatar_key ? (
+										<img src={`/img/${m.avatar_key}?w=64`} alt="" class="h-8 w-8 rounded-full object-cover shrink-0" />
+									) : (
+										<span class="h-8 w-8 rounded-full bg-navy/10 text-navy flex items-center justify-center text-xs font-bold shrink-0">
+											{m.display_name
+												.split(' ')
+												.map((p) => p[0])
+												.join('')
+												.slice(0, 2)
+												.toUpperCase()}
+										</span>
+									)}
+									{m.display_name}
+								</button>
+							))}
+						</form>
+					)}
+
+					<details class="text-center" open={members.length === 0}>
+						<summary class="cursor-pointer text-stone-600 underline">I'm new</summary>
+						<form method="POST" action="/api/whoami" class="flex flex-col gap-3 mt-4">
+							<input type="hidden" name="redirect" value={redirect} />
+							<input type="text" name="newName" required placeholder="Your name" class="field-lg" />
+							<button type="submit" class="btn-lg"> Add me </button>
+						</form>
+					</details>
+				</>
 			)
 		}
-
-		<details class="text-center" open={members.length === 0}>
-			<summary class="cursor-pointer text-stone-600 underline">I'm new</summary>
-			<form method="POST" action="/api/whoami" class="flex flex-col gap-3 mt-4">
-				<input type="hidden" name="redirect" value={redirect} />
-				<input type="text" name="newName" required placeholder="Your name" class="field-lg" />
-				<button type="submit" class="btn-lg"> Add me </button>
-			</form>
-		</details>
 	</div>
 </Layout>
