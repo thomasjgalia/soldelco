@@ -38,6 +38,18 @@ const activities = await Promise.all(
 			: null;
 		const rsvpClosed = activity.rsvp_closes_at ? new Date(activity.rsvp_closes_at) < new Date() : false;
 
+		const { results: rsvps } = await env.DB.prepare(
+			`SELECT members.display_name, rsvp_responses.attending
+			 FROM rsvp_responses JOIN members ON members.id = rsvp_responses.member_id
+			 WHERE competition_id = ?
+			 ORDER BY members.display_name`,
+		)
+			.bind(activity.id)
+			.all<{ display_name: string; attending: string }>();
+		const yesNames = rsvps.filter((r) => r.attending === 'yes').map((r) => r.display_name);
+		const maybeNames = rsvps.filter((r) => r.attending === 'maybe').map((r) => r.display_name);
+		const noNames = rsvps.filter((r) => r.attending === 'no').map((r) => r.display_name);
+
 		let teams: Team[] = [];
 		let rosterByTeam = new Map<number, string[]>();
 		let winnerIds = new Set<number>();
@@ -65,6 +77,9 @@ const activities = await Promise.all(
 			isScored: activity.kind === 'score',
 			attending: myResponse?.attending ?? null,
 			rsvpClosed,
+			yesNames,
+			maybeNames,
+			noNames,
 			teams,
 			rosterByTeam,
 			winnerIds,
@@ -125,6 +140,31 @@ const activities = await Promise.all(
 						</form>
 					)}
 				</div>
+
+				{(a.yesNames.length > 0 || a.maybeNames.length > 0 || a.noNames.length > 0) && (
+					<details class="mt-1">
+						<summary class="text-xs text-stone-500 cursor-pointer select-none">
+							{a.yesNames.length} in · {a.maybeNames.length} maybe · {a.noNames.length} out
+						</summary>
+						<div class="mt-1.5 text-sm space-y-0.5">
+							{a.yesNames.length > 0 && (
+								<p>
+									<span class="font-medium text-success">In:</span> {a.yesNames.join(', ')}
+								</p>
+							)}
+							{a.maybeNames.length > 0 && (
+								<p>
+									<span class="font-medium text-stone-600">Maybe:</span> {a.maybeNames.join(', ')}
+								</p>
+							)}
+							{a.noNames.length > 0 && (
+								<p>
+									<span class="font-medium text-flag-red">Out:</span> {a.noNames.join(', ')}
+								</p>
+							)}
+						</div>
+					</details>
+				)}
 
 				{a.teams.length > 0 && (
 					<ul class="flex flex-col divide-y divide-stone-200 mt-2">
