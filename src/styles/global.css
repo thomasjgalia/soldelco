@@ -10,6 +10,7 @@
 	--color-flag-red: #b31942;
 	--color-flag-red-dark: #8f1435;
 	--color-success: #15803d;
+	--color-maybe: #b45309;
 }
 
 /*
@@ -81,7 +82,7 @@
 	}
 
 	.rsvp-btn-maybe.is-selected {
-		@apply border-stone-500 bg-stone-500 text-white hover:border-stone-500 hover:text-white;
+		@apply border-maybe bg-maybe text-white hover:border-maybe hover:text-white;
 	}
 
 	.rsvp-btn-no.is-selected {

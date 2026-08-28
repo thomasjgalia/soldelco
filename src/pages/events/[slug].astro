@@ -146,22 +146,25 @@ const activities = await Promise.all(
 						<summary class="text-xs text-stone-500 cursor-pointer select-none">
 							{a.yesNames.length} in · {a.maybeNames.length} maybe · {a.noNames.length} out
 						</summary>
-						<div class="mt-1.5 text-sm space-y-0.5">
-							{a.yesNames.length > 0 && (
-								<p>
-									<span class="font-medium text-success">In:</span> {a.yesNames.join(', ')}
-								</p>
-							)}
-							{a.maybeNames.length > 0 && (
-								<p>
-									<span class="font-medium text-stone-600">Maybe:</span> {a.maybeNames.join(', ')}
-								</p>
-							)}
-							{a.noNames.length > 0 && (
-								<p>
-									<span class="font-medium text-flag-red">Out:</span> {a.noNames.join(', ')}
-								</p>
-							)}
+						<div class="mt-1.5 grid grid-cols-3 gap-x-2 text-xs">
+							<div>
+								<p class="font-medium text-success mb-0.5">In</p>
+								{a.yesNames.map((name) => (
+									<p class="text-success">{name}</p>
+								))}
+							</div>
+							<div>
+								<p class="font-medium text-maybe mb-0.5">Maybe</p>
+								{a.maybeNames.map((name) => (
+									<p class="text-maybe">{name}</p>
+								))}
+							</div>
+							<div>
+								<p class="font-medium text-flag-red mb-0.5">Out</p>
+								{a.noNames.map((name) => (
+									<p class="text-flag-red">{name}</p>
+								))}
+							</div>
 						</div>
 					</details>
 				)}
