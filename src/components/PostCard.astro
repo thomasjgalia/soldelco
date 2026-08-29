@@ -43,14 +43,14 @@ const { post, identity, admin } = Astro.props;
 	)}
 
 	{post.media.length > 0 && (
-		<div class="grid grid-cols-2 gap-1.5 mb-2">
+		<div class="-mx-4 mb-2 flex overflow-x-auto snap-x snap-mandatory">
 			{post.media.map((m) =>
 				m.kind === 'image' ? (
-					<button type="button" class="feed-lightbox-trigger block w-full" data-full={`/img/${m.r2_key}?w=1400`} data-kind="image">
-						<img src={`/img/${m.r2_key}?w=500`} alt="" class="w-full rounded-lg object-cover aspect-square" loading="lazy" />
+					<button type="button" class="feed-lightbox-trigger block w-full shrink-0 snap-start" data-full={`/img/${m.r2_key}?w=1400`} data-kind="image">
+						<img src={`/img/${m.r2_key}?w=800`} alt="" class="w-full aspect-square object-cover" loading="lazy" />
 					</button>
 				) : (
-					<video src={`/img/${m.r2_key}`} controls preload="none" class="w-full rounded-lg bg-black aspect-square object-cover" />
+					<video src={`/img/${m.r2_key}`} controls preload="none" class="w-full shrink-0 snap-start aspect-square bg-black object-cover" />
 				),
 			)}
 		</div>
