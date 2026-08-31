@@ -8,9 +8,9 @@ if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astr
 if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
 
 const id = Number(Astro.params.id);
-const album = await env.DB.prepare('SELECT id, slug, title, description, is_sol_weekend FROM albums WHERE id = ?')
+const album = await env.DB.prepare('SELECT id, slug, title, description, is_sol_weekend, occurred_at FROM albums WHERE id = ?')
 	.bind(id)
-	.first<{ id: number; slug: string; title: string; description: string | null; is_sol_weekend: number }>();
+	.first<{ id: number; slug: string; title: string; description: string | null; is_sol_weekend: number; occurred_at: string | null }>();
 
 if (!album) return Astro.redirect('/admin/albums');
 
@@ -30,6 +30,11 @@ const { results: photos } = await env.DB.prepare(
 		<textarea name="description" placeholder="Description (optional)" class="field">
 {album.description}
 		</textarea>
+		<div>
+			<label for="edit-album-date" class="text-xs text-stone-500 block mb-1">When did this happen?</label>
+			<input id="edit-album-date" type="date" name="occurredAt" value={album.occurred_at?.slice(0, 10) ?? ''} class="field" />
+			<p class="text-xs text-stone-400 mt-1">Controls where this album lands on the Timeline. Leave blank to fall back to when it was created.</p>
+		</div>
 		<label class="flex items-center gap-2 text-sm">
 			<input type="checkbox" name="isSolWeekend" checked={album.is_sol_weekend === 1} />
 			This is a SOL Weekend album

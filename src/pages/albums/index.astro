@@ -3,6 +3,7 @@ import Layout from '../../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
 
 const identity = Astro.locals.identity;
+const today = new Date().toISOString().slice(0, 10);
 
 const { results: albums } = await env.DB.prepare(
 	`SELECT albums.id, albums.slug, albums.title,
@@ -28,8 +29,15 @@ const { results: albums } = await env.DB.prepare(
 				to create an album.
 			</p>
 		) : (
-			<form method="POST" action="/api/albums" class="flex gap-2 mb-4">
-				<input type="text" name="title" required placeholder="New album title" class="field flex-1" />
+			<form method="POST" action="/api/albums" class="flex flex-col gap-2 mb-4 sm:flex-row sm:items-end">
+				<div class="flex-1">
+					<label for="new-album-title" class="text-xs text-stone-500 block mb-1">Title</label>
+					<input id="new-album-title" type="text" name="title" required placeholder="New album title" class="field w-full" />
+				</div>
+				<div>
+					<label for="new-album-date" class="text-xs text-stone-500 block mb-1">When did this happen?</label>
+					<input id="new-album-date" type="date" name="occurredAt" value={today} class="field" />
+				</div>
 				<button type="submit" class="btn shrink-0">
 					Create
 				</button>

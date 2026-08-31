@@ -7,6 +7,8 @@ const identity = Astro.locals.identity;
 if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
 if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
 
+const today = new Date().toISOString().slice(0, 10);
+
 const { results: albums } = await env.DB.prepare(
 	`SELECT albums.id, albums.slug, albums.title, COUNT(photos.id) as photo_count
 	 FROM albums
@@ -21,6 +23,10 @@ const { results: albums } = await env.DB.prepare(
 
 	<form method="POST" action="/api/admin/albums" class="form-stack mb-8">
 		<input type="text" name="title" required placeholder="Album title" class="field" />
+		<div>
+			<label for="new-album-date" class="text-xs text-stone-500 block mb-1">When did this happen?</label>
+			<input id="new-album-date" type="date" name="occurredAt" value={today} class="field" />
+		</div>
 		<label class="flex items-center gap-2 text-sm">
 			<input type="checkbox" name="isSolWeekend" checked />
 			This is a SOL Weekend album

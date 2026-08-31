@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { isAdmin } from '../../../../lib/admin';
-import { createAlbum } from '../../../../lib/albums';
+import { createAlbum, parseOccurredAt } from '../../../../lib/albums';
 
 export const POST: APIRoute = async ({ request, locals, redirect }) => {
 	const identity = locals.identity;
@@ -13,8 +13,9 @@ export const POST: APIRoute = async ({ request, locals, redirect }) => {
 	const title = String(form.get('title') ?? '').trim();
 	if (!title) return redirect('/admin/albums');
 	const isSolWeekend = Boolean(form.get('isSolWeekend'));
+	const occurredAt = parseOccurredAt(form.get('occurredAt'));
 
-	const album = await createAlbum(env, { title, createdBy: identity.memberId, isSolWeekend });
+	const album = await createAlbum(env, { title, createdBy: identity.memberId, isSolWeekend, occurredAt });
 
 	return redirect(`/admin/albums/${album?.id}`);
 };
