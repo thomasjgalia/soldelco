@@ -89,40 +89,47 @@ const { results: members } = await env.DB.prepare(
 		{photos.length === 0 && <p class="text-stone-500">No photos yet.</p>}
 	</div>
 
-	<div id="lightbox" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-50" role="dialog" aria-hidden="true">
-		<button type="button" id="lightbox-close" class="absolute top-4 right-4 text-white text-2xl leading-none" aria-label="Close">
-			&times;
-		</button>
-		<button
-			type="button"
-			id="lightbox-prev"
-			class="absolute left-2 top-1/2 -translate-y-1/2 text-white text-3xl px-2"
-			aria-label="Previous"
-		>
-			&#8249;
-		</button>
-		<img id="lightbox-img" src="" alt="" class="max-h-[90vh] max-w-[92vw] object-contain" />
-		<button
-			type="button"
-			id="lightbox-next"
-			class="absolute right-2 top-1/2 -translate-y-1/2 text-white text-3xl px-2"
-			aria-label="Next"
-		>
-			&#8250;
-		</button>
+	<div id="lightbox" class="fixed inset-0 bg-black/90 hidden flex-col z-50" role="dialog" aria-hidden="true">
+		<div class="relative flex-1 min-h-0 flex items-center justify-center">
+			<button type="button" id="lightbox-close" class="absolute top-4 right-4 text-white text-2xl leading-none" aria-label="Close">
+				&times;
+			</button>
+			<button
+				type="button"
+				id="lightbox-prev"
+				class="absolute left-2 top-1/2 -translate-y-1/2 text-white text-3xl px-2"
+				aria-label="Previous"
+			>
+				&#8249;
+			</button>
+			<img id="lightbox-img" src="" alt="" class="max-h-full max-w-[92vw] object-contain" />
+			<button
+				type="button"
+				id="lightbox-next"
+				class="absolute right-2 top-1/2 -translate-y-1/2 text-white text-3xl px-2"
+				aria-label="Next"
+			>
+				&#8250;
+			</button>
+		</div>
 
-		<div class="absolute bottom-4 inset-x-0 px-4 flex flex-col items-center gap-2 text-sm text-white">
+		<!-- Not absolutely positioned to the viewport bottom -- on mobile
+		     Safari that risks landing behind the browser's own bottom
+		     toolbar. This is a normal-flow footer, always right below the
+		     visible image. -->
+		<div class="shrink-0 bg-black/80 px-4 py-3 flex flex-col items-center gap-2 text-sm text-white">
 			<div id="lightbox-tag-list" class="flex flex-wrap gap-1.5 justify-center max-w-[92vw]" />
 			{
 				identity && (
-					<div class="flex gap-1.5 items-center">
+					<label class="flex gap-1.5 items-center">
+						<span class="text-white/70">Tag someone:</span>
 						<select id="lightbox-tag-select" class="text-stone-900 rounded px-2 py-1 text-sm">
-							<option value="">Tag someone...</option>
+							<option value="">Choose a name...</option>
 							{members.map((m) => (
 								<option value={m.id}>{m.display_name}</option>
 							))}
 						</select>
-					</div>
+					</label>
 				)
 			}
 		</div>
