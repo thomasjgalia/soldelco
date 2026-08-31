@@ -11,7 +11,7 @@ const { members, redirectTo = '/feed' } = Astro.props;
 </button>
 
 <dialog id="compose-dialog" class="rounded-xl p-0 w-[90vw] max-w-sm backdrop:bg-black/50">
-	<form method="POST" action="/api/feed" enctype="multipart/form-data" class="flex flex-col gap-3 p-4">
+	<form id="compose-form" method="POST" action="/api/feed" enctype="multipart/form-data" class="flex flex-col gap-3 p-4">
 		<input type="hidden" name="redirect" value={redirectTo} />
 		<div class="flex items-center justify-between">
 			<h2 class="font-bold">New post</h2>
@@ -44,10 +44,94 @@ const { members, redirectTo = '/feed' } = Astro.props;
 		const openBtn = document.getElementById('open-compose');
 		const dialog = document.getElementById('compose-dialog') as HTMLDialogElement | null;
 		const closeBtn = document.getElementById('close-compose');
+		const form = document.getElementById('compose-form') as HTMLFormElement | null;
 		openBtn?.addEventListener('click', () => dialog?.showModal());
 		closeBtn?.addEventListener('click', () => dialog?.close());
 		dialog?.addEventListener('click', (e) => {
 			if (e.target === dialog) dialog.close();
+		});
+
+		// Captures a frame partway into a video file as a poster/thumbnail,
+		// entirely client-side (a hidden <video> decodes it, a <canvas> grabs
+		// the frame) -- there's no server-side video processing here at all.
+		// Named with the __poster__. marker so uploadPostMedia (src/lib/feed.ts)
+		// recognizes it and pairs it with the video that precedes it in the
+		// upload, instead of treating it as a separate attached photo.
+		function capturePoster(videoFile: File): Promise<File | null> {
+			return new Promise((resolve) => {
+				const url = URL.createObjectURL(videoFile);
+				const video = document.createElement('video');
+				video.src = url;
+				video.muted = true;
+				video.playsInline = true;
+				const cleanup = () => URL.revokeObjectURL(url);
+				const fail = () => {
+					cleanup();
+					resolve(null);
+				};
+				video.addEventListener('error', fail);
+				video.addEventListener('loadedmetadata', () => {
+					video.currentTime = Math.min(0.5, (video.duration || 1) / 2);
+				});
+				video.addEventListener('seeked', () => {
+					try {
+						const canvas = document.createElement('canvas');
+						canvas.width = video.videoWidth;
+						canvas.height = video.videoHeight;
+						const ctx = canvas.getContext('2d');
+						if (!ctx || canvas.width === 0 || canvas.height === 0) return fail();
+						ctx.drawImage(video, 0, 0);
+						canvas.toBlob(
+							(blob) => {
+								cleanup();
+								resolve(blob ? new File([blob], '__poster__.jpg', { type: 'image/jpeg' }) : null);
+							},
+							'image/jpeg',
+							0.8,
+						);
+					} catch {
+						fail();
+					}
+				});
+			});
+		}
+
+		form?.addEventListener('submit', async (e) => {
+			e.preventDefault();
+			const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+			const originalLabel = submitBtn.textContent;
+			submitBtn.disabled = true;
+			submitBtn.textContent = 'Posting...';
+
+			const fileInput = form.querySelector('input[type="file"]') as HTMLInputElement;
+			const selectedFiles = Array.from(fileInput.files ?? []);
+
+			// Videos get their poster generated and inserted immediately after
+			// them -- uploadPostMedia relies on exactly this adjacency.
+			const orderedFiles: File[] = [];
+			for (const file of selectedFiles) {
+				orderedFiles.push(file);
+				if (file.type.startsWith('video/')) {
+					const poster = await capturePoster(file);
+					if (poster) orderedFiles.push(poster);
+				}
+			}
+
+			const formData = new FormData();
+			for (const [key, value] of new FormData(form).entries()) {
+				if (key === 'files') continue; // re-added below with posters interleaved
+				formData.append(key, value);
+			}
+			for (const file of orderedFiles) formData.append('files', file);
+
+			try {
+				const res = await fetch(form.action, { method: 'POST', body: formData });
+				window.location.href = res.url || (form.querySelector('input[name="redirect"]') as HTMLInputElement).value;
+			} catch {
+				submitBtn.disabled = false;
+				submitBtn.textContent = originalLabel;
+				alert('Failed to post. Try again.');
+			}
 		});
 	}
 

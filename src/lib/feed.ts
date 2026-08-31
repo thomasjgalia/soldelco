@@ -9,7 +9,7 @@ export type FeedPost = {
 	author_id: number;
 	author_name: string;
 	avatar_key: string | null;
-	media: { r2_key: string; kind: string }[];
+	media: { r2_key: string; kind: string; poster_key: string | null }[];
 	replies: { id: number; body: string; created_at: string; member_id: number; display_name: string; avatar_key: string | null }[];
 	tags: { member_id: number; display_name: string }[];
 	reactionCount: number;
@@ -33,9 +33,9 @@ export async function getRecentPosts(env: Env, identity: Identity | null, limit:
 
 	return Promise.all(
 		rawPosts.map(async (post) => {
-			const { results: media } = await env.DB.prepare('SELECT r2_key, kind FROM post_media WHERE post_id = ? ORDER BY created_at')
+			const { results: media } = await env.DB.prepare('SELECT r2_key, kind, poster_key FROM post_media WHERE post_id = ? ORDER BY created_at')
 				.bind(post.id)
-				.all<{ r2_key: string; kind: string }>();
+				.all<{ r2_key: string; kind: string; poster_key: string | null }>();
 
 			const { results: replies } = await env.DB.prepare(
 				`SELECT comments.id, comments.body, comments.created_at, comments.member_id, members.display_name, members.avatar_key
@@ -74,12 +74,29 @@ export async function getRecentPosts(env: Env, identity: Identity | null, limit:
 // Feed post media -- same shape as album photos, but keyed under posts/ and
 // tied to a post rather than an album.
 
+// A poster frame the client captured from a video before upload is sent as
+// a plain image file immediately after its video in the same `files` list,
+// named with this marker prefix. The client controls that ordering (see
+// ComposeDialog.astro's submit handler); this function trusts it rather
+// than trying to correlate across separate requests.
+const POSTER_MARKER = '__poster__.';
+
 export async function uploadPostMedia(env: Env, postId: number, files: File[]): Promise<void> {
+	let lastVideoMediaId: number | null = null;
+
 	for (const file of files) {
 		if (file.size === 0) continue;
 		const isImage = file.type.startsWith('image/');
 		const isVideo = file.type.startsWith('video/');
 		if (!isImage && !isVideo) continue;
+
+		if (isImage && lastVideoMediaId !== null && file.name.startsWith(POSTER_MARKER)) {
+			const key = `posts/${postId}/${crypto.randomUUID()}.jpg`;
+			await env.PHOTOS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+			await env.DB.prepare('UPDATE post_media SET poster_key = ? WHERE id = ?').bind(key, lastVideoMediaId).run();
+			lastVideoMediaId = null;
+			continue;
+		}
 
 		const ext = file.name.split('.').pop()?.toLowerCase() || (isImage ? 'jpg' : 'mov');
 		const key = `posts/${postId}/${crypto.randomUUID()}.${ext}`;
@@ -100,19 +117,23 @@ export async function uploadPostMedia(env: Env, postId: number, files: File[]): 
 
 		await env.PHOTOS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
 
-		await env.DB.prepare('INSERT INTO post_media (post_id, r2_key, kind, width, height) VALUES (?, ?, ?, ?, ?)')
+		const inserted = await env.DB.prepare('INSERT INTO post_media (post_id, r2_key, kind, width, height) VALUES (?, ?, ?, ?, ?) RETURNING id')
 			.bind(postId, key, isImage ? 'image' : 'video', width, height)
-			.run();
+			.first<{ id: number }>();
+
+		lastVideoMediaId = isVideo ? (inserted?.id ?? null) : null;
 	}
 }
 
 // Deletes a post's R2 media, its media/comment/reaction rows, then the post
 // itself. Used by both the author's own delete and the admin override.
 export async function deletePost(env: Env, postId: number): Promise<void> {
-	const { results: media } = await env.DB.prepare('SELECT r2_key FROM post_media WHERE post_id = ?')
+	const { results: media } = await env.DB.prepare('SELECT r2_key, poster_key FROM post_media WHERE post_id = ?')
 		.bind(postId)
-		.all<{ r2_key: string }>();
-	await Promise.all(media.map((m) => env.PHOTOS.delete(m.r2_key)));
+		.all<{ r2_key: string; poster_key: string | null }>();
+	await Promise.all(
+		media.flatMap((m) => [env.PHOTOS.delete(m.r2_key), ...(m.poster_key ? [env.PHOTOS.delete(m.poster_key)] : [])]),
+	);
 
 	await env.DB.batch([
 		env.DB.prepare('DELETE FROM post_media WHERE post_id = ?').bind(postId),

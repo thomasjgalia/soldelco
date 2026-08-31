@@ -50,7 +50,13 @@ const { post, identity, admin } = Astro.props;
 						<img src={`/img/${m.r2_key}?w=800`} alt="" class="w-full aspect-square object-cover" loading="lazy" />
 					</button>
 				) : (
-					<video src={`/video/${m.r2_key}`} controls preload="none" class="w-full shrink-0 snap-start aspect-square bg-black object-cover" />
+					<video
+					src={`/video/${m.r2_key}`}
+					poster={m.poster_key ? `/img/${m.poster_key}?w=800` : undefined}
+					controls
+					preload="none"
+					class="w-full shrink-0 snap-start aspect-square bg-black object-cover"
+				/>
 				),
 			)}
 		</div>
