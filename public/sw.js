@@ -32,13 +32,21 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
-	const url = event.notification.data?.url || '/';
+	// event.notification.data.url is relative ('/feed'); client.url is always
+	// absolute ('https://soldelco.com/feed') -- comparing them directly never
+	// matches, so the "focus the matching tab" branch never ran, for any
+	// notification. Resolve both to an absolute URL, and navigate an existing
+	// window to it explicitly rather than relying on openWindow() to do that
+	// (unreliable for an already-open-but-backgrounded window, especially on
+	// iOS, where a backgrounded installed PWA often just gets foregrounded
+	// as-is instead of actually navigating).
+	const target = new URL(event.notification.data?.url || '/', self.location.origin).href;
 	event.waitUntil(
-		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-			for (const client of clients) {
-				if (client.url === url && 'focus' in client) return client.focus();
-			}
-			return self.clients.openWindow(url);
+		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
+			const client = clients[0];
+			if (!client) return self.clients.openWindow(target);
+			if (client.url !== target && 'navigate' in client) await client.navigate(target);
+			return client.focus();
 		}),
 	);
 });

@@ -50,7 +50,7 @@ const { post, identity, admin } = Astro.props;
 						<img src={`/img/${m.r2_key}?w=800`} alt="" class="w-full aspect-square object-cover" loading="lazy" />
 					</button>
 				) : (
-					<video src={`/img/${m.r2_key}`} controls preload="none" class="w-full shrink-0 snap-start aspect-square bg-black object-cover" />
+					<video src={`/video/${m.r2_key}`} controls preload="none" class="w-full shrink-0 snap-start aspect-square bg-black object-cover" />
 				),
 			)}
 		</div>
@@ -83,7 +83,7 @@ const { post, identity, admin } = Astro.props;
 		)}
 
 		{(post.isOwn || admin) && (
-			<form method="POST" action={`/api/feed/${post.id}/delete`}>
+			<form method="POST" action={`/api/feed/${post.id}/delete`} onsubmit="return confirm('Delete this post? This can\'t be undone.')">
 				<button type="submit" class="link-danger">
 					delete
 				</button>
@@ -106,7 +106,7 @@ const { post, identity, admin } = Astro.props;
 						<span class="font-semibold text-stone-900">{reply.display_name}</span>{' '}
 						<span class="text-stone-700">{reply.body}</span>
 						{(identity?.memberId === reply.member_id || admin) && (
-							<form method="POST" action={`/api/feed/comments/${reply.id}/delete`} class="inline">
+							<form method="POST" action={`/api/feed/comments/${reply.id}/delete`} class="inline" onsubmit="return confirm('Delete this reply?')">
 								<button type="submit" class="link-danger text-xs ml-1">
 									delete
 								</button>

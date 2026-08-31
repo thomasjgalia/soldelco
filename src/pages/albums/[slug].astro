@@ -55,7 +55,7 @@ const images = photos.filter((p) => p.kind === 'image');
 						<img src={`/img/${photo.r2_key}?w=400`} alt={photo.caption ?? ''} class="w-full rounded" loading="lazy" />
 					</button>
 				) : (
-					<video src={`/img/${photo.r2_key}`} controls preload="none" class="mb-2 w-full break-inside-avoid rounded bg-black" />
+					<video src={`/video/${photo.r2_key}`} controls preload="none" class="mb-2 w-full break-inside-avoid rounded bg-black" />
 				),
 			)
 		}
