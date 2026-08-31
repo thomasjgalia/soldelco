@@ -17,6 +17,27 @@ const { results: photos } = await env.DB.prepare(
 	.all<{ id: number; r2_key: string; kind: string; caption: string | null; poster_key: string | null }>();
 
 const images = photos.filter((p) => p.kind === 'image');
+
+const tagsByPhoto = new Map<number, { member_id: number; display_name: string }[]>();
+if (images.length > 0) {
+	const { results: tagRows } = await env.DB.prepare(
+		`SELECT photo_tags.photo_id, members.id as member_id, members.display_name
+		 FROM photo_tags JOIN members ON members.id = photo_tags.member_id
+		 WHERE photo_tags.photo_id IN (${images.map(() => '?').join(',')})
+		 ORDER BY members.display_name`,
+	)
+		.bind(...images.map((p) => p.id))
+		.all<{ photo_id: number; member_id: number; display_name: string }>();
+	for (const row of tagRows) {
+		if (!tagsByPhoto.has(row.photo_id)) tagsByPhoto.set(row.photo_id, []);
+		tagsByPhoto.get(row.photo_id)!.push({ member_id: row.member_id, display_name: row.display_name });
+	}
+}
+const lightboxData = images.map((p) => ({ id: p.id, tags: tagsByPhoto.get(p.id) ?? [] }));
+
+const { results: members } = await env.DB.prepare(
+	"SELECT id, display_name FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
+).all<{ id: number; display_name: string }>();
 ---
 
 <Layout title={album.title}>
@@ -89,8 +110,29 @@ const images = photos.filter((p) => p.kind === 'image');
 		>
 			&#8250;
 		</button>
+
+		<div class="absolute bottom-4 inset-x-0 px-4 flex flex-col items-center gap-2 text-sm text-white">
+			<div id="lightbox-tag-list" class="flex flex-wrap gap-1.5 justify-center max-w-[92vw]" />
+			{
+				identity && (
+					<div class="flex gap-1.5 items-center">
+						<select id="lightbox-tag-select" class="text-stone-900 rounded px-2 py-1 text-sm">
+							<option value="">Tag someone...</option>
+							{members.map((m) => (
+								<option value={m.id}>{m.display_name}</option>
+							))}
+						</select>
+						<button type="button" id="lightbox-tag-add" class="btn text-sm px-2 py-1">
+							Tag
+						</button>
+					</div>
+				)
+			}
+		</div>
 	</div>
 </Layout>
+
+<script type="application/json" id="lightbox-photo-data" set:html={JSON.stringify(lightboxData)} />
 
 <script>
 	import { capturePosterFromFile } from '../../lib/client/posterCapture';
@@ -130,6 +172,69 @@ const images = photos.filter((p) => p.kind === 'image');
 		}
 	});
 
+	type Tag = { member_id: number; display_name: string };
+	type PhotoData = { id: number; tags: Tag[] };
+
+	const photoDataEl = document.getElementById('lightbox-photo-data');
+	const photoData: PhotoData[] = photoDataEl?.textContent ? JSON.parse(photoDataEl.textContent) : [];
+
+	const tagListEl = document.getElementById('lightbox-tag-list');
+	const tagSelect = document.getElementById('lightbox-tag-select') as HTMLSelectElement | null;
+	const tagAddBtn = document.getElementById('lightbox-tag-add');
+
+	function renderTags(index: number) {
+		const photo = photoData[index];
+		if (!tagListEl || !photo) return;
+		tagListEl.innerHTML = '';
+		photo.tags.forEach((tag) => {
+			const pill = document.createElement('span');
+			pill.className = 'inline-flex items-center gap-1 bg-white/20 rounded-full px-2 py-0.5';
+			pill.textContent = tag.display_name;
+			if (tagSelect) {
+				const removeBtn = document.createElement('button');
+				removeBtn.type = 'button';
+				removeBtn.textContent = '×';
+				removeBtn.className = 'text-white/70 hover:text-white leading-none';
+				removeBtn.addEventListener('click', () => removeTag(photo.id, tag.member_id));
+				pill.appendChild(removeBtn);
+			}
+			tagListEl.appendChild(pill);
+		});
+		if (tagSelect) {
+			Array.from(tagSelect.options).forEach((opt) => {
+				if (!opt.value) return;
+				opt.hidden = photo.tags.some((t) => String(t.member_id) === opt.value);
+			});
+			tagSelect.value = '';
+		}
+	}
+
+	async function addTag(photoId: number, memberId: number) {
+		const formData = new FormData();
+		formData.append('memberId', String(memberId));
+		const res = await fetch(`/api/photos/${photoId}/tags`, { method: 'POST', body: formData });
+		if (!res.ok) return;
+		const data = (await res.json()) as { tags: Tag[] };
+		const photo = photoData.find((p) => p.id === photoId);
+		if (photo) photo.tags = data.tags;
+		renderTags(current);
+	}
+
+	async function removeTag(photoId: number, memberId: number) {
+		const res = await fetch(`/api/photos/${photoId}/tags?memberId=${memberId}`, { method: 'DELETE' });
+		if (!res.ok) return;
+		const data = (await res.json()) as { tags: Tag[] };
+		const photo = photoData.find((p) => p.id === photoId);
+		if (photo) photo.tags = data.tags;
+		renderTags(current);
+	}
+
+	tagAddBtn?.addEventListener('click', () => {
+		const photo = photoData[current];
+		const memberId = Number(tagSelect?.value);
+		if (photo && memberId) addTag(photo.id, memberId);
+	});
+
 	const thumbs = Array.from(document.querySelectorAll<HTMLButtonElement>('.photo-thumb'));
 	const urls = thumbs.map((t) => t.dataset.full!);
 	const lightbox = document.getElementById('lightbox')!;
@@ -139,6 +244,7 @@ const images = photos.filter((p) => p.kind === 'image');
 	function show(index: number) {
 		current = (index + urls.length) % urls.length;
 		img.src = urls[current];
+		renderTags(current);
 		lightbox.classList.remove('hidden');
 		lightbox.classList.add('flex');
 		lightbox.setAttribute('aria-hidden', 'false');
