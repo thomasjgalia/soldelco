@@ -21,6 +21,10 @@ const { results: albums } = await env.DB.prepare(
 
 	<form method="POST" action="/api/admin/albums" class="form-stack mb-8">
 		<input type="text" name="title" required placeholder="Album title" class="field" />
+		<label class="flex items-center gap-2 text-sm">
+			<input type="checkbox" name="isSolWeekend" checked />
+			This is a SOL Weekend album
+		</label>
 		<button type="submit" class="btn">Create album</button>
 	</form>
 

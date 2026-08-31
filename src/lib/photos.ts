@@ -1,17 +1,32 @@
 // Shared by both the admin and member-facing upload routes -- who's allowed
 // to call it differs, but writing a photo into R2 + `photos` doesn't.
 
+// A poster frame the client captured from a video before upload is sent as
+// a plain image file immediately after its video in the same `files` list,
+// named with this marker prefix -- see src/lib/client/posterCapture.ts.
+const POSTER_MARKER = '__poster__.';
+
 export async function uploadPhotosToAlbum(
 	env: Env,
-	album: { id: number; slug: string },
+	album: { id: number; slug: string; occurredAt?: string | null },
 	files: File[],
 	uploadedByMemberId: number,
 ): Promise<void> {
+	let lastVideoPhotoId: number | null = null;
+
 	for (const file of files) {
 		if (file.size === 0) continue;
 		const isImage = file.type.startsWith('image/');
 		const isVideo = file.type.startsWith('video/');
 		if (!isImage && !isVideo) continue;
+
+		if (isImage && lastVideoPhotoId !== null && file.name.startsWith(POSTER_MARKER)) {
+			const key = `albums/${album.slug}/${crypto.randomUUID()}.jpg`;
+			await env.PHOTOS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+			await env.DB.prepare('UPDATE photos SET poster_key = ? WHERE id = ?').bind(key, lastVideoPhotoId).run();
+			lastVideoPhotoId = null;
+			continue;
+		}
 
 		const ext = file.name.split('.').pop()?.toLowerCase() || (isImage ? 'jpg' : 'mov');
 		const key = `albums/${album.slug}/${crypto.randomUUID()}.${ext}`;
@@ -32,9 +47,13 @@ export async function uploadPhotosToAlbum(
 
 		await env.PHOTOS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
 
-		await env.DB.prepare('INSERT INTO photos (album_id, r2_key, kind, width, height, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)')
-			.bind(album.id, key, isImage ? 'image' : 'video', width, height, uploadedByMemberId)
-			.run();
+		const inserted = await env.DB.prepare(
+			'INSERT INTO photos (album_id, r2_key, kind, width, height, taken_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+		)
+			.bind(album.id, key, isImage ? 'image' : 'video', width, height, album.occurredAt ?? null, uploadedByMemberId)
+			.first<{ id: number }>();
+
+		lastVideoPhotoId = isVideo ? (inserted?.id ?? null) : null;
 	}
 }
 

@@ -27,6 +27,10 @@ players-export.csv
 # raw headshot photos (migrated to R2, not committed)
 solheadshots/
 
+# raw personal photo/video archive (migrated to R2, not committed)
+SOLTimeline/
+scripts/generated-timeline-migration.sql
+
 # one-time Cloudinary migration input (source of truth becomes D1 after migration)
 scripts/cloudinary-albums.json
 scripts/generated-migration.sql

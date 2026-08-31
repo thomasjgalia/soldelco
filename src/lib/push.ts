@@ -35,3 +35,14 @@ export async function sendPushToAll(env: Env, payload: PushPayload): Promise<num
 	await Promise.all(results.map((row) => sendToSubscription(env, row, payload)));
 	return results.length;
 }
+
+// Same as sendPushToAll, but skips the acting member's own devices -- for
+// notifications triggered by something a member did (new post, new album
+// photos), where they shouldn't be notified about their own action.
+export async function sendPushToAllExcept(env: Env, excludeMemberId: number, payload: PushPayload): Promise<number> {
+	const { results } = await env.DB.prepare('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE member_id != ?')
+		.bind(excludeMemberId)
+		.all<SubscriptionRow>();
+	await Promise.all(results.map((row) => sendToSubscription(env, row, payload)));
+	return results.length;
+}

@@ -40,6 +40,8 @@ const { members, redirectTo = '/feed' } = Astro.props;
 </dialog>
 
 <script>
+	import { capturePosterFromFile } from '../lib/client/posterCapture';
+
 	function initCompose() {
 		const openBtn = document.getElementById('open-compose');
 		const dialog = document.getElementById('compose-dialog') as HTMLDialogElement | null;
@@ -50,51 +52,6 @@ const { members, redirectTo = '/feed' } = Astro.props;
 		dialog?.addEventListener('click', (e) => {
 			if (e.target === dialog) dialog.close();
 		});
-
-		// Captures a frame partway into a video file as a poster/thumbnail,
-		// entirely client-side (a hidden <video> decodes it, a <canvas> grabs
-		// the frame) -- there's no server-side video processing here at all.
-		// Named with the __poster__. marker so uploadPostMedia (src/lib/feed.ts)
-		// recognizes it and pairs it with the video that precedes it in the
-		// upload, instead of treating it as a separate attached photo.
-		function capturePoster(videoFile: File): Promise<File | null> {
-			return new Promise((resolve) => {
-				const url = URL.createObjectURL(videoFile);
-				const video = document.createElement('video');
-				video.src = url;
-				video.muted = true;
-				video.playsInline = true;
-				const cleanup = () => URL.revokeObjectURL(url);
-				const fail = () => {
-					cleanup();
-					resolve(null);
-				};
-				video.addEventListener('error', fail);
-				video.addEventListener('loadedmetadata', () => {
-					video.currentTime = Math.min(0.5, (video.duration || 1) / 2);
-				});
-				video.addEventListener('seeked', () => {
-					try {
-						const canvas = document.createElement('canvas');
-						canvas.width = video.videoWidth;
-						canvas.height = video.videoHeight;
-						const ctx = canvas.getContext('2d');
-						if (!ctx || canvas.width === 0 || canvas.height === 0) return fail();
-						ctx.drawImage(video, 0, 0);
-						canvas.toBlob(
-							(blob) => {
-								cleanup();
-								resolve(blob ? new File([blob], '__poster__.jpg', { type: 'image/jpeg' }) : null);
-							},
-							'image/jpeg',
-							0.8,
-						);
-					} catch {
-						fail();
-					}
-				});
-			});
-		}
 
 		form?.addEventListener('submit', async (e) => {
 			e.preventDefault();
@@ -112,7 +69,7 @@ const { members, redirectTo = '/feed' } = Astro.props;
 			for (const file of selectedFiles) {
 				orderedFiles.push(file);
 				if (file.type.startsWith('video/')) {
-					const poster = await capturePoster(file);
+					const poster = await capturePosterFromFile(file);
 					if (poster) orderedFiles.push(poster);
 				}
 			}

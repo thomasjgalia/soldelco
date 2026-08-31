@@ -1,0 +1,24 @@
+import { slugify } from './slug';
+
+// Shared by both the admin and member-facing "create album" routes -- who's
+// allowed to call it (and whether they can set is_sol_weekend) differs, but
+// the slug-collision-retry insert doesn't.
+export async function createAlbum(
+	env: Env,
+	opts: { title: string; createdBy: number; isSolWeekend: boolean },
+): Promise<{ id: number; slug: string } | null> {
+	const baseSlug = slugify(opts.title);
+	let slug = baseSlug;
+
+	for (let attempt = 0; attempt < 5; attempt++) {
+		try {
+			const inserted = await env.DB.prepare('INSERT INTO albums (slug, title, created_by, is_sol_weekend) VALUES (?, ?, ?, ?) RETURNING id')
+				.bind(slug, opts.title, opts.createdBy, opts.isSolWeekend ? 1 : 0)
+				.first<{ id: number }>();
+			if (inserted) return { id: inserted.id, slug };
+		} catch {
+			slug = `${baseSlug}-${attempt + 2}`;
+		}
+	}
+	return null;
+}

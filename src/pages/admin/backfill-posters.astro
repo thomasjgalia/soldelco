@@ -1,0 +1,83 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../lib/admin';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const { results: videos } = await env.DB.prepare(`SELECT id, r2_key FROM photos WHERE kind = 'video' AND poster_key IS NULL ORDER BY id`).all<{
+	id: number;
+	r2_key: string;
+}>();
+---
+
+<Layout title="Backfill video thumbnails">
+	<h1 class="page-title">Backfill video thumbnails</h1>
+	<p class="text-stone-600 mb-4">
+		{videos.length} video{videos.length === 1 ? '' : 's'} without a thumbnail. This runs entirely in this browser tab
+		-- each video loads, a frame gets captured, and the thumbnail uploads one at a time. Leave this tab open until it
+		finishes.
+	</p>
+
+	{
+		videos.length > 0 ? (
+			<>
+				<button type="button" id="start-backfill" class="btn mb-4">
+					Generate thumbnails
+				</button>
+				<p id="backfill-status" class="text-sm text-stone-600 mb-2" />
+				<ul id="backfill-log" class="text-xs text-stone-500 flex flex-col gap-0.5" />
+			</>
+		) : (
+			<p class="text-stone-500">Every video already has a thumbnail.</p>
+		)
+	}
+</Layout>
+
+<script type="application/json" id="backfill-data" set:html={JSON.stringify(videos)} />
+
+<script>
+	import { capturePosterFromUrl } from '../../lib/client/posterCapture';
+
+	type VideoRow = { id: number; r2_key: string };
+
+	const dataEl = document.getElementById('backfill-data');
+	const videos: VideoRow[] = dataEl?.textContent ? JSON.parse(dataEl.textContent) : [];
+
+	const startBtn = document.getElementById('start-backfill') as HTMLButtonElement | null;
+	const statusEl = document.getElementById('backfill-status');
+	const logEl = document.getElementById('backfill-log');
+
+	function log(text: string, failed: boolean) {
+		if (!logEl) return;
+		const li = document.createElement('li');
+		li.textContent = text;
+		if (failed) li.classList.add('text-flag-red');
+		logEl.appendChild(li);
+	}
+
+	startBtn?.addEventListener('click', async () => {
+		startBtn.disabled = true;
+		let done = 0;
+		let failed = 0;
+		for (const video of videos) {
+			if (statusEl) statusEl.textContent = `Processing ${done + 1} of ${videos.length}...`;
+			try {
+				const blob = await capturePosterFromUrl(`/video/${video.r2_key}`);
+				if (!blob) throw new Error('could not capture a frame');
+				const formData = new FormData();
+				formData.append('poster', blob, 'poster.jpg');
+				const res = await fetch(`/api/admin/photos/${video.id}/poster`, { method: 'POST', body: formData });
+				if (!res.ok) throw new Error(`upload failed (${res.status})`);
+				log(`✓ ${video.r2_key}`, false);
+			} catch (err) {
+				failed++;
+				log(`✗ ${video.r2_key} -- ${err instanceof Error ? err.message : 'failed'}`, true);
+			}
+			done++;
+		}
+		if (statusEl) statusEl.textContent = `Done. ${done - failed}/${videos.length} thumbnails generated${failed ? `, ${failed} failed` : ''}.`;
+	});
+</script>

@@ -8,17 +8,17 @@ if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astr
 if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
 
 const id = Number(Astro.params.id);
-const album = await env.DB.prepare('SELECT id, slug, title, description FROM albums WHERE id = ?')
+const album = await env.DB.prepare('SELECT id, slug, title, description, is_sol_weekend FROM albums WHERE id = ?')
 	.bind(id)
-	.first<{ id: number; slug: string; title: string; description: string | null }>();
+	.first<{ id: number; slug: string; title: string; description: string | null; is_sol_weekend: number }>();
 
 if (!album) return Astro.redirect('/admin/albums');
 
 const { results: photos } = await env.DB.prepare(
-	'SELECT id, r2_key, kind, caption FROM photos WHERE album_id = ? ORDER BY created_at DESC',
+	'SELECT id, r2_key, kind, caption, poster_key FROM photos WHERE album_id = ? ORDER BY created_at DESC',
 )
 	.bind(id)
-	.all<{ id: number; r2_key: string; kind: string; caption: string | null }>();
+	.all<{ id: number; r2_key: string; kind: string; caption: string | null; poster_key: string | null }>();
 ---
 
 <Layout title={album.title}>
@@ -30,10 +30,14 @@ const { results: photos } = await env.DB.prepare(
 		<textarea name="description" placeholder="Description (optional)" class="field">
 {album.description}
 		</textarea>
+		<label class="flex items-center gap-2 text-sm">
+			<input type="checkbox" name="isSolWeekend" checked={album.is_sol_weekend === 1} />
+			This is a SOL Weekend album
+		</label>
 		<button type="submit" class="btn">Save</button>
 	</form>
 
-	<form method="POST" action={`/api/admin/albums/${album.id}/photos`} enctype="multipart/form-data" class="form-stack mb-8">
+	<form id="album-upload-form" method="POST" action={`/api/admin/albums/${album.id}/photos`} enctype="multipart/form-data" class="form-stack mb-8">
 		<input type="file" name="files" accept="image/*,video/*" multiple required class="field" />
 		<button type="submit" class="btn">Upload photos</button>
 	</form>
@@ -44,6 +48,8 @@ const { results: photos } = await env.DB.prepare(
 				<div class="relative">
 					{photo.kind === 'image' ? (
 						<img src={`/img/${photo.r2_key}?w=200`} alt={photo.caption ?? ''} class="w-full aspect-square object-cover rounded" />
+					) : photo.poster_key ? (
+						<img src={`/img/${photo.poster_key}?w=200`} alt="" class="w-full aspect-square object-cover rounded" />
 					) : (
 						<div class="w-full aspect-square bg-stone-200 rounded flex items-center justify-center text-xs text-stone-500">
 							video
@@ -66,3 +72,40 @@ const { results: photos } = await env.DB.prepare(
 		<button type="submit" class="link-danger">Delete this album</button>
 	</form>
 </Layout>
+
+<script>
+	import { capturePosterFromFile } from '../../../lib/client/posterCapture';
+
+	const uploadForm = document.getElementById('album-upload-form') as HTMLFormElement | null;
+	uploadForm?.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		const submitBtn = uploadForm.querySelector('button[type="submit"]') as HTMLButtonElement;
+		const originalLabel = submitBtn.textContent;
+		submitBtn.disabled = true;
+		submitBtn.textContent = 'Uploading...';
+
+		const fileInput = uploadForm.querySelector('input[type="file"]') as HTMLInputElement;
+		const selectedFiles = Array.from(fileInput.files ?? []);
+
+		const orderedFiles: File[] = [];
+		for (const file of selectedFiles) {
+			orderedFiles.push(file);
+			if (file.type.startsWith('video/')) {
+				const poster = await capturePosterFromFile(file);
+				if (poster) orderedFiles.push(poster);
+			}
+		}
+
+		const formData = new FormData();
+		for (const file of orderedFiles) formData.append('files', file);
+
+		try {
+			const res = await fetch(uploadForm.action, { method: 'POST', body: formData });
+			window.location.href = res.url || uploadForm.action;
+		} catch {
+			submitBtn.disabled = false;
+			submitBtn.textContent = originalLabel;
+			alert('Failed to upload. Try again.');
+		}
+	});
+</script>

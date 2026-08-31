@@ -11,10 +11,10 @@ const album = await env.DB.prepare('SELECT id, title, description FROM albums WH
 if (!album) return Astro.redirect('/albums');
 
 const { results: photos } = await env.DB.prepare(
-	'SELECT id, r2_key, kind, caption FROM photos WHERE album_id = ? ORDER BY created_at ASC',
+	'SELECT id, r2_key, kind, caption, poster_key FROM photos WHERE album_id = ? ORDER BY created_at ASC',
 )
 	.bind(album.id)
-	.all<{ id: number; r2_key: string; kind: string; caption: string | null }>();
+	.all<{ id: number; r2_key: string; kind: string; caption: string | null; poster_key: string | null }>();
 
 const images = photos.filter((p) => p.kind === 'image');
 ---
@@ -33,7 +33,7 @@ const images = photos.filter((p) => p.kind === 'image');
 				to add your own photos.
 			</p>
 		) : (
-			<form method="POST" action={`/api/albums/${album.id}/photos`} enctype="multipart/form-data" class="flex gap-2 mb-4">
+			<form id="album-upload-form" method="POST" action={`/api/albums/${album.id}/photos`} enctype="multipart/form-data" class="flex gap-2 mb-4">
 				<input type="file" name="files" accept="image/*,video/*" multiple required class="field flex-1" />
 				<button type="submit" class="btn shrink-0">
 					Add photos
@@ -55,7 +55,13 @@ const images = photos.filter((p) => p.kind === 'image');
 						<img src={`/img/${photo.r2_key}?w=400`} alt={photo.caption ?? ''} class="w-full rounded" loading="lazy" />
 					</button>
 				) : (
-					<video src={`/video/${photo.r2_key}`} controls preload="none" class="mb-2 w-full break-inside-avoid rounded bg-black" />
+					<video
+						src={`/video/${photo.r2_key}`}
+						poster={photo.poster_key ? `/img/${photo.poster_key}?w=800` : undefined}
+						controls
+						preload="none"
+						class="mb-2 w-full break-inside-avoid rounded bg-black"
+					/>
 				),
 			)
 		}
@@ -87,6 +93,43 @@ const images = photos.filter((p) => p.kind === 'image');
 </Layout>
 
 <script>
+	import { capturePosterFromFile } from '../../lib/client/posterCapture';
+
+	const uploadForm = document.getElementById('album-upload-form') as HTMLFormElement | null;
+	uploadForm?.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		const submitBtn = uploadForm.querySelector('button[type="submit"]') as HTMLButtonElement;
+		const originalLabel = submitBtn.textContent;
+		submitBtn.disabled = true;
+		submitBtn.textContent = 'Uploading...';
+
+		const fileInput = uploadForm.querySelector('input[type="file"]') as HTMLInputElement;
+		const selectedFiles = Array.from(fileInput.files ?? []);
+
+		// Videos get their poster generated and inserted immediately after
+		// them -- uploadPhotosToAlbum relies on exactly this adjacency.
+		const orderedFiles: File[] = [];
+		for (const file of selectedFiles) {
+			orderedFiles.push(file);
+			if (file.type.startsWith('video/')) {
+				const poster = await capturePosterFromFile(file);
+				if (poster) orderedFiles.push(poster);
+			}
+		}
+
+		const formData = new FormData();
+		for (const file of orderedFiles) formData.append('files', file);
+
+		try {
+			const res = await fetch(uploadForm.action, { method: 'POST', body: formData });
+			window.location.href = res.url || uploadForm.action;
+		} catch {
+			submitBtn.disabled = false;
+			submitBtn.textContent = originalLabel;
+			alert('Failed to upload. Try again.');
+		}
+	});
+
 	const thumbs = Array.from(document.querySelectorAll<HTMLButtonElement>('.photo-thumb'));
 	const urls = thumbs.map((t) => t.dataset.full!);
 	const lightbox = document.getElementById('lightbox')!;

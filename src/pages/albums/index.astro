@@ -2,16 +2,40 @@
 import Layout from '../../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
 
+const identity = Astro.locals.identity;
+
 const { results: albums } = await env.DB.prepare(
 	`SELECT albums.id, albums.slug, albums.title,
-		(SELECT r2_key FROM photos WHERE photos.album_id = albums.id AND photos.kind = 'image' ORDER BY created_at ASC LIMIT 1) as cover_key
+		COALESCE(
+			(SELECT r2_key FROM photos WHERE photos.album_id = albums.id AND photos.kind = 'image' ORDER BY created_at ASC LIMIT 1),
+			(SELECT poster_key FROM photos WHERE photos.album_id = albums.id AND photos.kind = 'video' AND poster_key IS NOT NULL ORDER BY created_at ASC LIMIT 1)
+		) as cover_key
 	 FROM albums
-	 ORDER BY albums.created_at DESC`,
+	 ORDER BY COALESCE(albums.occurred_at, albums.created_at) DESC`,
 ).all<{ id: number; slug: string; title: string; cover_key: string | null }>();
 ---
 
 <Layout title="Albums">
-	<h1 class="page-title">Albums</h1>
+	<a href="/timeline" class="link-muted">&larr; Timeline</a>
+	<h1 class="page-title mt-1">All Albums</h1>
+
+	{
+		!identity ? (
+			<p class="text-stone-500 text-sm mb-4">
+				<a href="/whoami?redirect=/albums" class="link">
+					Pick your name
+				</a>{' '}
+				to create an album.
+			</p>
+		) : (
+			<form method="POST" action="/api/albums" class="flex gap-2 mb-4">
+				<input type="text" name="title" required placeholder="New album title" class="field flex-1" />
+				<button type="submit" class="btn shrink-0">
+					Create
+				</button>
+			</form>
+		)
+	}
 
 	<div class="grid grid-cols-2 gap-3">
 		{

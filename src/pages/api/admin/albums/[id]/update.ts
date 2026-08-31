@@ -12,10 +12,11 @@ export const POST: APIRoute = async ({ request, params, locals, redirect }) => {
 	const form = await request.formData();
 	const title = String(form.get('title') ?? '').trim();
 	const description = String(form.get('description') ?? '').trim();
+	const isSolWeekend = form.get('isSolWeekend') ? 1 : 0;
 
 	if (title) {
-		await env.DB.prepare('UPDATE albums SET title = ?, description = ? WHERE id = ?')
-			.bind(title, description || null, id)
+		await env.DB.prepare('UPDATE albums SET title = ?, description = ?, is_sol_weekend = ? WHERE id = ?')
+			.bind(title, description || null, isSolWeekend, id)
 			.run();
 	}
 

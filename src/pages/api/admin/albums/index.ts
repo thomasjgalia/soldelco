@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { isAdmin } from '../../../../lib/admin';
-import { slugify } from '../../../../lib/slug';
+import { createAlbum } from '../../../../lib/albums';
 
 export const POST: APIRoute = async ({ request, locals, redirect }) => {
 	const identity = locals.identity;
@@ -12,20 +12,9 @@ export const POST: APIRoute = async ({ request, locals, redirect }) => {
 	const form = await request.formData();
 	const title = String(form.get('title') ?? '').trim();
 	if (!title) return redirect('/admin/albums');
+	const isSolWeekend = Boolean(form.get('isSolWeekend'));
 
-	const baseSlug = slugify(title);
-	let slug = baseSlug;
-	let inserted: { id: number } | null = null;
+	const album = await createAlbum(env, { title, createdBy: identity.memberId, isSolWeekend });
 
-	for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
-		try {
-			inserted = await env.DB.prepare('INSERT INTO albums (slug, title, created_by) VALUES (?, ?, ?) RETURNING id')
-				.bind(slug, title, identity.memberId)
-				.first<{ id: number }>();
-		} catch {
-			slug = `${baseSlug}-${attempt + 2}`;
-		}
-	}
-
-	return redirect(`/admin/albums/${inserted?.id}`);
+	return redirect(`/admin/albums/${album?.id}`);
 };

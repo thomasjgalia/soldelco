@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { uploadPostMedia } from '../../../lib/feed';
 import { safeRedirect } from '../../../lib/auth';
-import { sendPushToMember } from '../../../lib/push';
+import { sendPushToAllExcept } from '../../../lib/push';
 
 export const POST: APIRoute = async ({ request, locals, redirect }) => {
 	const identity = locals.identity;
@@ -29,16 +29,14 @@ export const POST: APIRoute = async ({ request, locals, redirect }) => {
 		await env.DB.batch(
 			tagIds.map((memberId) => env.DB.prepare('INSERT INTO post_tags (post_id, member_id) VALUES (?, ?)').bind(post!.id, memberId)),
 		);
-		await Promise.all(
-			tagIds.map((memberId) =>
-				sendPushToMember(env, memberId, {
-					title: `${identity.displayName} tagged you`,
-					body: (body ?? 'in a post').slice(0, 120),
-					url: '/feed',
-				}),
-			),
-		);
 	}
+
+	// Every new post notifies the whole group, not just anyone tagged in it.
+	await sendPushToAllExcept(env, identity.memberId, {
+		title: `${identity.displayName} posted`,
+		body: (body ?? (files.length > 0 ? 'New photos in the Feed' : 'Check it out')).slice(0, 120),
+		url: '/feed',
+	});
 
 	return redirect(target);
 };

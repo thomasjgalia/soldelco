@@ -1,0 +1,223 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+
+type AlbumRow = {
+	slug: string;
+	title: string;
+	is_sol_weekend: number;
+	effective_date: string;
+	cover_key: string | null;
+	photo_count: number;
+};
+type PostRow = {
+	id: number;
+	body: string | null;
+	effective_date: string;
+	cover_key: string | null;
+	cover_kind: string | null;
+	cover_poster: string | null;
+};
+
+const { results: albumRows } = await env.DB.prepare(
+	`SELECT albums.slug, albums.title, albums.is_sol_weekend,
+		COALESCE(albums.occurred_at, albums.created_at) as effective_date,
+		COALESCE(
+			(SELECT r2_key FROM photos WHERE photos.album_id = albums.id AND photos.kind = 'image' ORDER BY created_at ASC LIMIT 1),
+			(SELECT poster_key FROM photos WHERE photos.album_id = albums.id AND photos.kind = 'video' AND poster_key IS NOT NULL ORDER BY created_at ASC LIMIT 1)
+		) as cover_key,
+		(SELECT COUNT(*) FROM photos WHERE photos.album_id = albums.id) as photo_count
+	 FROM albums
+	 ORDER BY effective_date DESC`,
+).all<AlbumRow>();
+
+const { results: postRows } = await env.DB.prepare(
+	`SELECT posts.id, posts.body, posts.created_at as effective_date,
+		(SELECT r2_key FROM post_media WHERE post_media.post_id = posts.id ORDER BY created_at ASC LIMIT 1) as cover_key,
+		(SELECT kind FROM post_media WHERE post_media.post_id = posts.id ORDER BY created_at ASC LIMIT 1) as cover_kind,
+		(SELECT poster_key FROM post_media WHERE post_media.post_id = posts.id ORDER BY created_at ASC LIMIT 1) as cover_poster
+	 FROM posts
+	 WHERE EXISTS (SELECT 1 FROM post_media WHERE post_media.post_id = posts.id)
+	 ORDER BY posts.created_at DESC`,
+).all<PostRow>();
+
+type Entry =
+	| { kind: 'album'; date: string; slug: string; title: string; coverKey: string | null; count: number; isSolWeekend: boolean }
+	| { kind: 'post'; date: string; body: string | null; coverKey: string | null; coverKind: string | null; coverPoster: string | null };
+
+const entries: Entry[] = [
+	...albumRows.map((a): Entry => ({
+		kind: 'album',
+		date: a.effective_date,
+		slug: a.slug,
+		title: a.title,
+		coverKey: a.cover_key,
+		count: a.photo_count,
+		isSolWeekend: a.is_sol_weekend === 1,
+	})),
+	...postRows.map((p): Entry => ({
+		kind: 'post',
+		date: p.effective_date,
+		body: p.body,
+		coverKey: p.cover_key,
+		coverKind: p.cover_kind,
+		coverPoster: p.cover_poster,
+	})),
+].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+const MONTH_NAMES = [
+	'January', 'February', 'March', 'April', 'May', 'June',
+	'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function groupKey(date: string) {
+	return date.slice(0, 7); // YYYY-MM
+}
+function monthLabel(key: string) {
+	const [year, month] = key.split('-');
+	return `${MONTH_NAMES[Number(month) - 1]} ${year}`;
+}
+
+// Since entries are already sorted newest-first, walking them in order and
+// starting a new group whenever the YYYY-MM key changes gives sticky-header
+// groups without a second sort pass.
+const years = [...new Set(entries.map((e) => e.date.slice(0, 4)))];
+---
+
+<Layout title="Timeline">
+	<div class="flex items-center justify-between gap-3 mb-1">
+		<h1 class="page-title mb-0">Timeline</h1>
+		<a href="/albums" class="link-muted text-sm shrink-0">All Albums</a>
+	</div>
+
+	<div class="flex items-center justify-between gap-3 mb-3">
+		<div class="flex gap-1 text-sm">
+			<button type="button" id="filter-all" class="tl-filter-btn px-3 py-1 rounded-full bg-navy text-white" data-sol="0">All</button>
+			<button type="button" id="filter-sol" class="tl-filter-btn px-3 py-1 rounded-full bg-stone-200 text-stone-700" data-sol="1">SOL Weekends</button>
+		</div>
+	</div>
+
+	{years.length > 0 && (
+		<nav aria-label="Jump to year" class="fixed right-0 top-1/2 -translate-y-1/2 z-20 flex flex-col items-end gap-1.5 max-h-[70vh] overflow-y-auto py-2 pl-4 pr-1.5">
+			{years.map((y) => (
+				<a href={`#y-${y}`} class="tl-year-chip text-[11px] leading-none text-stone-400 hover:text-navy transition-colors" data-year={y}>
+					{y}
+				</a>
+			))}
+		</nav>
+	)}
+
+	<div class="flex flex-col gap-1 pr-6">
+		{
+			entries.map((entry, i) => {
+				const key = groupKey(entry.date);
+				const isNewGroup = i === 0 || groupKey(entries[i - 1].date) !== key;
+				const isNewYear = i === 0 || entries[i - 1].date.slice(0, 4) !== entry.date.slice(0, 4);
+				return (
+					<>
+						{isNewGroup && (
+							<div
+								id={isNewYear ? `y-${entry.date.slice(0, 4)}` : undefined}
+								class="tl-header sticky top-0 bg-stone-50 z-10 -mx-4 px-4 py-2 text-sm font-bold text-stone-700 border-b border-stone-200"
+								data-group={key}
+								data-year={entry.date.slice(0, 4)}
+							>
+								{monthLabel(key)}
+							</div>
+						)}
+						{entry.kind === 'album' ? (
+							<a
+								href={`/albums/${entry.slug}`}
+								class="tl-entry flex items-center gap-3 py-2 border-b border-stone-100"
+								data-group={key}
+								data-weekend={entry.isSolWeekend ? '1' : '0'}
+							>
+								<div class="h-16 w-16 shrink-0 rounded-lg overflow-hidden bg-stone-200">
+									{entry.coverKey && <img src={`/img/${entry.coverKey}?w=200`} alt="" class="h-full w-full object-cover" loading="lazy" />}
+								</div>
+								<div class="min-w-0">
+									<p class="font-medium truncate">{entry.title}</p>
+									<p class="text-xs text-stone-500">
+										{entry.count} photo{entry.count === 1 ? '' : 's'}
+										{entry.isSolWeekend && ' · SOL Weekend'}
+									</p>
+								</div>
+							</a>
+						) : (
+							<a href="/feed" class="tl-entry flex items-center gap-3 py-2 border-b border-stone-100" data-group={key} data-weekend="post">
+								<div class="h-16 w-16 shrink-0 rounded-lg overflow-hidden bg-stone-200 flex items-center justify-center">
+									{entry.coverKind === 'image' && entry.coverKey ? (
+										<img src={`/img/${entry.coverKey}?w=200`} alt="" class="h-full w-full object-cover" loading="lazy" />
+									) : entry.coverPoster ? (
+										<img src={`/img/${entry.coverPoster}?w=200`} alt="" class="h-full w-full object-cover" loading="lazy" />
+									) : (
+										<span class="text-xs text-stone-500">video</span>
+									)}
+								</div>
+								<div class="min-w-0">
+									<p class="text-sm text-stone-800 truncate">{entry.body || 'Photo post'}</p>
+									<p class="text-xs text-stone-500">From the Feed</p>
+								</div>
+							</a>
+						)}
+					</>
+				);
+			})
+		}
+		{entries.length === 0 && <p class="text-stone-500">Nothing on the timeline yet.</p>}
+	</div>
+</Layout>
+
+<script>
+	function applyFilter(solOnly: boolean) {
+		document.querySelectorAll<HTMLElement>('.tl-entry').forEach((el) => {
+			const show = !solOnly || el.dataset.weekend === '1';
+			el.classList.toggle('hidden', !show);
+		});
+		document.querySelectorAll<HTMLElement>('.tl-header').forEach((header) => {
+			const anyVisible = document.querySelector(`.tl-entry[data-group="${header.dataset.group}"]:not(.hidden)`);
+			header.classList.toggle('hidden', !anyVisible);
+		});
+		document.querySelectorAll<HTMLElement>('.tl-year-chip').forEach((chip) => {
+			const anyVisible = document.querySelector(`.tl-header[data-year="${chip.dataset.year}"]:not(.hidden)`);
+			chip.classList.toggle('hidden', !anyVisible);
+		});
+	}
+
+	const allBtn = document.getElementById('filter-all')!;
+	const solBtn = document.getElementById('filter-sol')!;
+	function setActive(active: HTMLElement, inactive: HTMLElement) {
+		active.classList.add('bg-navy', 'text-white');
+		active.classList.remove('bg-stone-200', 'text-stone-700');
+		inactive.classList.remove('bg-navy', 'text-white');
+		inactive.classList.add('bg-stone-200', 'text-stone-700');
+	}
+	allBtn.addEventListener('click', () => {
+		applyFilter(false);
+		setActive(allBtn, solBtn);
+	});
+	solBtn.addEventListener('click', () => {
+		applyFilter(true);
+		setActive(solBtn, allBtn);
+	});
+
+	// Google Photos-style scroll spy: bold whichever year's month headers are
+	// nearest the top of the viewport as the page scrolls.
+	const yearChips = Array.from(document.querySelectorAll<HTMLElement>('.tl-year-chip'));
+	function setActiveYear(year: string) {
+		yearChips.forEach((chip) => {
+			const active = chip.dataset.year === year;
+			chip.classList.toggle('text-navy', active);
+			chip.classList.toggle('font-bold', active);
+			chip.classList.toggle('text-stone-400', !active);
+		});
+	}
+	const headerObserver = new IntersectionObserver(
+		(observed) => {
+			const visible = observed.filter((e) => e.isIntersecting).map((e) => e.target as HTMLElement);
+			if (visible.length > 0 && visible[0].dataset.year) setActiveYear(visible[0].dataset.year);
+		},
+		{ rootMargin: '-10% 0px -80% 0px' },
+	);
+	document.querySelectorAll<HTMLElement>('.tl-header').forEach((h) => headerObserver.observe(h));
+</script>
