@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { sendPushToMember } from '../../../../lib/push';
+import { logActivity } from '../../../../lib/activity';
 
 export const POST: APIRoute = async ({ request, params, locals, redirect }) => {
 	const identity = locals.identity;
@@ -17,6 +18,8 @@ export const POST: APIRoute = async ({ request, params, locals, redirect }) => {
 	await env.DB.prepare("INSERT INTO comments (target_type, target_id, member_id, body) VALUES ('post', ?, ?, ?)")
 		.bind(id, identity.memberId, body)
 		.run();
+
+	await logActivity(env, 'reply_created', identity.memberId, body.slice(0, 100));
 
 	// Notify the post's author that someone replied -- not the replier
 	// themselves, and not a broadcast to everyone (that's what /admin/notify

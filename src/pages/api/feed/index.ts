@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { uploadPostMedia } from '../../../lib/feed';
 import { safeRedirect } from '../../../lib/auth';
 import { sendPushToAllExcept } from '../../../lib/push';
+import { logActivity } from '../../../lib/activity';
 
 export const POST: APIRoute = async ({ request, locals, redirect }) => {
 	const identity = locals.identity;
@@ -24,6 +25,8 @@ export const POST: APIRoute = async ({ request, locals, redirect }) => {
 		.first<{ id: number }>();
 
 	if (files.length > 0) await uploadPostMedia(env, post!.id, files);
+
+	await logActivity(env, 'post_created', identity.memberId, body ? body.slice(0, 100) : files.length > 0 ? `Posted ${files.length} photo(s)/video(s)` : 'Posted a link');
 
 	if (tagIds.length > 0) {
 		await env.DB.batch(

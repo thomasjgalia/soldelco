@@ -1,4 +1,5 @@
 import { slugify } from './slug';
+import { logActivity } from './activity';
 
 // Shared by both the admin and member-facing "create album" routes -- who's
 // allowed to call it (and whether they can set is_sol_weekend) differs, but
@@ -15,7 +16,10 @@ export async function createAlbum(
 			const inserted = await env.DB.prepare('INSERT INTO albums (slug, title, created_by, is_sol_weekend) VALUES (?, ?, ?, ?) RETURNING id')
 				.bind(slug, opts.title, opts.createdBy, opts.isSolWeekend ? 1 : 0)
 				.first<{ id: number }>();
-			if (inserted) return { id: inserted.id, slug };
+			if (inserted) {
+				await logActivity(env, 'album_created', opts.createdBy, `Created album "${opts.title}"`);
+				return { id: inserted.id, slug };
+			}
 		} catch {
 			slug = `${baseSlug}-${attempt + 2}`;
 		}

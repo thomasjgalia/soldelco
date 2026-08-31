@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { isAdmin } from '../../../../../lib/admin';
 import { uploadPhotosToAlbum } from '../../../../../lib/photos';
 import { sendPushToAllExcept } from '../../../../../lib/push';
+import { logActivity } from '../../../../../lib/activity';
 
 export const POST: APIRoute = async ({ request, params, locals, redirect }) => {
 	const identity = locals.identity;
@@ -21,6 +22,7 @@ export const POST: APIRoute = async ({ request, params, locals, redirect }) => {
 	await uploadPhotosToAlbum(env, { id: album.id, slug: album.slug, occurredAt: album.occurred_at }, files, identity.memberId);
 
 	if (files.length > 0) {
+		await logActivity(env, 'album_photos_added', identity.memberId, `Added ${files.length} file(s) to "${album.title}"`);
 		await sendPushToAllExcept(env, identity.memberId, {
 			title: `${identity.displayName} added photos`,
 			body: `New photos in "${album.title}"`,

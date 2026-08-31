@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { sendPushToMember } from '../../../../lib/push';
+import { logActivity } from '../../../../lib/activity';
 
 export const POST: APIRoute = async ({ params, locals, redirect }) => {
 	const identity = locals.identity;
@@ -17,6 +18,8 @@ export const POST: APIRoute = async ({ params, locals, redirect }) => {
 		await env.DB.prepare("INSERT INTO reactions (target_type, target_id, member_id, kind) VALUES ('post', ?, ?, 'heart')")
 			.bind(id, identity.memberId)
 			.run();
+
+		await logActivity(env, 'reaction_added', identity.memberId, `Reacted to post #${id}`);
 
 		// Only on adding a reaction, not removing one -- mirrors reply.ts's
 		// existing notify-the-author pattern, which reactions never had.

@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { createIdentity, safeRedirect } from '../../lib/auth';
+import { logActivity } from '../../lib/activity';
 
 export const prerender = false;
 
@@ -45,5 +46,6 @@ export const POST: APIRoute = async ({ request, cookies, redirect }) => {
 	}
 
 	await createIdentity(cookies, env.IDENTITY_SECRET, member.id, member.display_name);
+	await logActivity(env, 'profile_claim', member.id, `Claimed as ${member.display_name}`);
 	return redirect(target);
 };

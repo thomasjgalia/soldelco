@@ -1,0 +1,81 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
+import { isAdmin } from '../../lib/admin';
+import { formatTimestamp } from '../../lib/format';
+
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+if (!(await isAdmin(identity.memberId))) return Astro.redirect('/');
+
+const { results: entries } = await env.DB.prepare(
+	`SELECT activity_log.id, activity_log.event_type, activity_log.detail, activity_log.created_at, members.display_name
+	 FROM activity_log
+	 LEFT JOIN members ON members.id = activity_log.member_id
+	 ORDER BY activity_log.created_at DESC
+	 LIMIT 200`,
+).all<{ id: number; event_type: string; detail: string | null; created_at: string; display_name: string | null }>();
+
+const EVENT_LABELS: Record<string, string> = {
+	profile_claim: 'Signed in',
+	post_created: 'New post',
+	reply_created: 'Replied',
+	reaction_added: 'Reacted',
+	album_created: 'Created album',
+	album_photos_added: 'Added photos',
+};
+
+const eventTypes = [...new Set(entries.map((e) => e.event_type))];
+---
+
+<Layout title="Activity">
+	<h1 class="page-title">Activity</h1>
+
+	{eventTypes.length > 0 && (
+		<div class="flex gap-1 flex-wrap mb-4 text-sm">
+			<button type="button" class="activity-filter-btn px-3 py-1 rounded-full bg-navy text-white" data-type="">All</button>
+			{eventTypes.map((type) => (
+				<button type="button" class="activity-filter-btn px-3 py-1 rounded-full bg-stone-200 text-stone-700" data-type={type}>
+					{EVENT_LABELS[type] ?? type}
+				</button>
+			))}
+		</div>
+	)}
+
+	<ul class="flex flex-col divide-y divide-stone-200">
+		{
+			entries.map((entry) => (
+				<li class="activity-row py-2.5" data-type={entry.event_type}>
+					<div class="flex items-baseline justify-between gap-2">
+						<p class="text-sm">
+							<span class="font-semibold text-stone-900">{entry.display_name ?? 'Unknown'}</span>{' '}
+							<span class="text-stone-500">{(EVENT_LABELS[entry.event_type] ?? entry.event_type).toLowerCase()}</span>
+						</p>
+						<span class="text-xs text-stone-400 shrink-0">{formatTimestamp(entry.created_at)}</span>
+					</div>
+					{entry.detail && <p class="text-xs text-stone-500 mt-0.5">{entry.detail}</p>}
+				</li>
+			))
+		}
+		{entries.length === 0 && <li class="py-3 text-stone-500">No activity yet.</li>}
+	</ul>
+</Layout>
+
+<script>
+	const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.activity-filter-btn'));
+	const rows = Array.from(document.querySelectorAll<HTMLElement>('.activity-row'));
+
+	buttons.forEach((btn) => {
+		btn.addEventListener('click', () => {
+			const type = btn.dataset.type ?? '';
+			rows.forEach((row) => row.classList.toggle('hidden', Boolean(type) && row.dataset.type !== type));
+			buttons.forEach((b) => {
+				const active = b === btn;
+				b.classList.toggle('bg-navy', active);
+				b.classList.toggle('text-white', active);
+				b.classList.toggle('bg-stone-200', !active);
+				b.classList.toggle('text-stone-700', !active);
+			});
+		});
+	});
+</script>
