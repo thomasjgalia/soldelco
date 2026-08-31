@@ -45,7 +45,13 @@ self.addEventListener('notificationclick', (event) => {
 		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
 			const client = clients[0];
 			if (!client) return self.clients.openWindow(target);
-			if (client.url !== target && 'navigate' in client) await client.navigate(target);
+			// Always navigate, even if this client is already sitting on the
+			// same URL -- almost every notification (new post, reply, reaction)
+			// points at the same '/feed', so "already there" is the common
+			// case, not an edge case. Skipping the reload there just re-focuses
+			// a stale, already-rendered background tab that doesn't yet have
+			// the new content the notification was about.
+			if ('navigate' in client) await client.navigate(target);
 			return client.focus();
 		}),
 	);
