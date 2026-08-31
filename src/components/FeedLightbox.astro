@@ -1,6 +1,13 @@
 ---
+import type { Identity } from '../lib/auth';
+
 // Single overlay shared by every PostCard on the page -- include this once
 // per page that renders PostCard, not once per card.
+interface Props {
+	members: { id: number; display_name: string }[];
+	identity: Identity | null;
+}
+const { members, identity } = Astro.props;
 ---
 
 <div id="feed-lightbox" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-50" role="dialog" aria-hidden="true">
@@ -8,13 +15,85 @@
 		&times;
 	</button>
 	<img id="feed-lightbox-img" src="" alt="" class="max-h-[90vh] max-w-[92vw] object-contain" />
+
+	<div class="absolute bottom-4 inset-x-0 px-4 flex flex-col items-center gap-2 text-sm text-white">
+		<div id="feed-lightbox-tag-list" class="flex flex-wrap gap-1.5 justify-center max-w-[92vw]" />
+		{
+			identity && (
+				<select id="feed-lightbox-tag-select" class="text-stone-900 rounded px-2 py-1 text-sm">
+					<option value="">Tag someone...</option>
+					{members.map((m) => (
+						<option value={m.id}>{m.display_name}</option>
+					))}
+				</select>
+			)
+		}
+	</div>
 </div>
 
 <script>
+	type Tag = { member_id: number; display_name: string };
+
 	function initLightbox() {
 		const lightbox = document.getElementById('feed-lightbox');
 		const img = document.getElementById('feed-lightbox-img') as HTMLImageElement | null;
 		if (!lightbox || !img) return;
+
+		const tagListEl = document.getElementById('feed-lightbox-tag-list');
+		const tagSelect = document.getElementById('feed-lightbox-tag-select') as HTMLSelectElement | null;
+		let currentMediaId: number | null = null;
+		let currentTags: Tag[] = [];
+
+		function renderTags() {
+			if (!tagListEl) return;
+			tagListEl.innerHTML = '';
+			currentTags.forEach((tag) => {
+				const pill = document.createElement('span');
+				pill.className = 'inline-flex items-center gap-1 bg-white/20 rounded-full px-2 py-0.5';
+				pill.textContent = tag.display_name;
+				if (tagSelect) {
+					const removeBtn = document.createElement('button');
+					removeBtn.type = 'button';
+					removeBtn.textContent = '×';
+					removeBtn.className = 'text-white/70 hover:text-white leading-none';
+					removeBtn.addEventListener('click', () => removeTag(tag.member_id));
+					pill.appendChild(removeBtn);
+				}
+				tagListEl.appendChild(pill);
+			});
+			if (tagSelect) {
+				Array.from(tagSelect.options).forEach((opt) => {
+					if (!opt.value) return;
+					opt.hidden = currentTags.some((t) => String(t.member_id) === opt.value);
+				});
+				tagSelect.value = '';
+			}
+		}
+
+		async function addTag(memberId: number) {
+			if (currentMediaId === null) return;
+			const formData = new FormData();
+			formData.append('memberId', String(memberId));
+			const res = await fetch(`/api/post-media/${currentMediaId}/tags`, { method: 'POST', body: formData });
+			if (!res.ok) return;
+			const data = (await res.json()) as { tags: Tag[] };
+			currentTags = data.tags;
+			renderTags();
+		}
+
+		async function removeTag(memberId: number) {
+			if (currentMediaId === null) return;
+			const res = await fetch(`/api/post-media/${currentMediaId}/tags?memberId=${memberId}`, { method: 'DELETE' });
+			if (!res.ok) return;
+			const data = (await res.json()) as { tags: Tag[] };
+			currentTags = data.tags;
+			renderTags();
+		}
+
+		tagSelect?.addEventListener('change', () => {
+			const memberId = Number(tagSelect.value);
+			if (memberId) addTag(memberId);
+		});
 
 		function close() {
 			lightbox!.classList.add('hidden');
@@ -26,6 +105,9 @@
 		document.querySelectorAll<HTMLButtonElement>('.feed-lightbox-trigger').forEach((trigger) => {
 			trigger.addEventListener('click', () => {
 				img!.src = trigger.dataset.full!;
+				currentMediaId = trigger.dataset.mediaId ? Number(trigger.dataset.mediaId) : null;
+				currentTags = trigger.dataset.tags ? JSON.parse(trigger.dataset.tags) : [];
+				renderTags();
 				lightbox!.classList.remove('hidden');
 				lightbox!.classList.add('flex');
 				lightbox!.setAttribute('aria-hidden', 'false');

@@ -46,7 +46,14 @@ const { post, identity, admin } = Astro.props;
 		<div class="-mx-4 mb-2 flex overflow-x-auto snap-x snap-mandatory">
 			{post.media.map((m) =>
 				m.kind === 'image' ? (
-					<button type="button" class="feed-lightbox-trigger block w-full shrink-0 snap-start" data-full={`/img/${m.r2_key}?w=1400`} data-kind="image">
+					<button
+						type="button"
+						class="feed-lightbox-trigger block w-full shrink-0 snap-start"
+						data-full={`/img/${m.r2_key}?w=1400`}
+						data-kind="image"
+						data-media-id={m.id}
+						data-tags={JSON.stringify(m.tags)}
+					>
 						<img src={`/img/${m.r2_key}?w=800`} alt="" class="w-full aspect-square object-cover" loading="lazy" />
 					</button>
 				) : (

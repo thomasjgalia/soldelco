@@ -122,9 +122,6 @@ const { results: members } = await env.DB.prepare(
 								<option value={m.id}>{m.display_name}</option>
 							))}
 						</select>
-						<button type="button" id="lightbox-tag-add" class="btn text-sm px-2 py-1">
-							Tag
-						</button>
 					</div>
 				)
 			}
@@ -180,7 +177,6 @@ const { results: members } = await env.DB.prepare(
 
 	const tagListEl = document.getElementById('lightbox-tag-list');
 	const tagSelect = document.getElementById('lightbox-tag-select') as HTMLSelectElement | null;
-	const tagAddBtn = document.getElementById('lightbox-tag-add');
 
 	function renderTags(index: number) {
 		const photo = photoData[index];
@@ -229,9 +225,9 @@ const { results: members } = await env.DB.prepare(
 		renderTags(current);
 	}
 
-	tagAddBtn?.addEventListener('click', () => {
+	tagSelect?.addEventListener('change', () => {
 		const photo = photoData[current];
-		const memberId = Number(tagSelect?.value);
+		const memberId = Number(tagSelect.value);
 		if (photo && memberId) addTag(photo.id, memberId);
 	});
 

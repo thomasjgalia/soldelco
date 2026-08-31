@@ -77,7 +77,7 @@ const { results: members } = await env.DB.prepare(
 		</div>
 	</div>
 
-	<FeedLightbox />
+	<FeedLightbox members={members} identity={identity} />
 </Layout>
 
 <script define:vars={{ urls }}>

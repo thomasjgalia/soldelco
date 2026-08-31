@@ -39,5 +39,5 @@ const { results: members } = await env.DB.prepare(
 		{posts.length === 0 && <p class="text-stone-500 text-sm">Nothing posted yet.</p>}
 	</div>
 
-	<FeedLightbox />
+	<FeedLightbox members={members} identity={identity} />
 </Layout>

@@ -9,7 +9,7 @@ export type FeedPost = {
 	author_id: number;
 	author_name: string;
 	avatar_key: string | null;
-	media: { r2_key: string; kind: string; poster_key: string | null }[];
+	media: { id: number; r2_key: string; kind: string; poster_key: string | null; tags: { member_id: number; display_name: string }[] }[];
 	replies: { id: number; body: string; created_at: string; member_id: number; display_name: string; avatar_key: string | null }[];
 	tags: { member_id: number; display_name: string }[];
 	reactionCount: number;
@@ -33,9 +33,23 @@ export async function getRecentPosts(env: Env, identity: Identity | null, limit:
 
 	return Promise.all(
 		rawPosts.map(async (post) => {
-			const { results: media } = await env.DB.prepare('SELECT r2_key, kind, poster_key FROM post_media WHERE post_id = ? ORDER BY created_at')
+			const { results: media } = await env.DB.prepare('SELECT id, r2_key, kind, poster_key FROM post_media WHERE post_id = ? ORDER BY created_at')
 				.bind(post.id)
-				.all<{ r2_key: string; kind: string; poster_key: string | null }>();
+				.all<{ id: number; r2_key: string; kind: string; poster_key: string | null }>();
+
+			const mediaWithTags = await Promise.all(
+				media.map(async (m) => {
+					const { results: mediaTags } = await env.DB.prepare(
+						`SELECT members.id as member_id, members.display_name
+						 FROM post_media_tags JOIN members ON members.id = post_media_tags.member_id
+						 WHERE post_media_tags.media_id = ?
+						 ORDER BY members.display_name`,
+					)
+						.bind(m.id)
+						.all<{ member_id: number; display_name: string }>();
+					return { ...m, tags: mediaTags };
+				}),
+			);
 
 			const { results: replies } = await env.DB.prepare(
 				`SELECT comments.id, comments.body, comments.created_at, comments.member_id, members.display_name, members.avatar_key
@@ -60,7 +74,7 @@ export async function getRecentPosts(env: Env, identity: Identity | null, limit:
 
 			return {
 				...post,
-				media,
+				media: mediaWithTags,
 				replies,
 				tags,
 				reactionCount: reactionRows.length,
@@ -128,14 +142,15 @@ export async function uploadPostMedia(env: Env, postId: number, files: File[]): 
 // Deletes a post's R2 media, its media/comment/reaction rows, then the post
 // itself. Used by both the author's own delete and the admin override.
 export async function deletePost(env: Env, postId: number): Promise<void> {
-	const { results: media } = await env.DB.prepare('SELECT r2_key, poster_key FROM post_media WHERE post_id = ?')
+	const { results: media } = await env.DB.prepare('SELECT id, r2_key, poster_key FROM post_media WHERE post_id = ?')
 		.bind(postId)
-		.all<{ r2_key: string; poster_key: string | null }>();
+		.all<{ id: number; r2_key: string; poster_key: string | null }>();
 	await Promise.all(
 		media.flatMap((m) => [env.PHOTOS.delete(m.r2_key), ...(m.poster_key ? [env.PHOTOS.delete(m.poster_key)] : [])]),
 	);
 
 	await env.DB.batch([
+		...media.map((m) => env.DB.prepare('DELETE FROM post_media_tags WHERE media_id = ?').bind(m.id)),
 		env.DB.prepare('DELETE FROM post_media WHERE post_id = ?').bind(postId),
 		env.DB.prepare('DELETE FROM post_tags WHERE post_id = ?').bind(postId),
 		env.DB.prepare("DELETE FROM comments WHERE target_type = 'post' AND target_id = ?").bind(postId),
