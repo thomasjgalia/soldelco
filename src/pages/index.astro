@@ -57,9 +57,17 @@ const { results: members } = await env.DB.prepare(
 			)
 		}
 
-		{identity && (
+		{identity ? (
 			<div class="mt-4">
 				<ComposeDialog members={members} redirectTo="/" />
+			</div>
+		) : (
+			<div class="mt-6 inline-block rounded-lg border border-navy/20 bg-navy/5 px-5 py-4 max-w-sm">
+				<p class="font-semibold text-navy mb-1">👋 New here?</p>
+				<p class="text-sm text-stone-600 mb-3">Pick your name to post, add photos, and join in.</p>
+				<a href="/whoami?redirect=/" class="btn inline-block">
+					Who are you?
+				</a>
 			</div>
 		)}
 	</div>
