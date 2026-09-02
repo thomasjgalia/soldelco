@@ -5,6 +5,7 @@ import { sortTeams, winningTeams, type Team } from '../../lib/results';
 
 const { slug } = Astro.params;
 const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
 
 const event = await env.DB.prepare('SELECT id, title, description, location, starts_at, ends_at FROM events WHERE slug = ?')
 	.bind(slug)

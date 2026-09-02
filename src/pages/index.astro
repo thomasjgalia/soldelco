@@ -7,17 +7,24 @@ import PostCard from '../components/PostCard.astro';
 import ComposeDialog from '../components/ComposeDialog.astro';
 import FeedLightbox from '../components/FeedLightbox.astro';
 
-const { results: photos } = await env.DB.prepare(
-	"SELECT r2_key FROM photos WHERE kind = 'image' ORDER BY RANDOM() LIMIT 15",
-).all<{ r2_key: string }>();
-
-const urls = photos.map((p) => `/img/${p.r2_key}?w=800`);
-
-const nextEvent = await env.DB.prepare(
-	"SELECT slug, title, starts_at, location FROM events WHERE starts_at >= date('now') ORDER BY starts_at ASC LIMIT 1",
-).first<{ slug: string; title: string; starts_at: string; location: string | null }>();
-
 const identity = Astro.locals.identity ?? null;
+
+// Albums and Events are members-only -- an anonymous visitor gets neither
+// the photo carousel nor the "next up" card, only Feed content (which is
+// the one thing left open to everyone) plus the sign-in prompt below.
+let urls: string[] = [];
+let nextEvent: { slug: string; title: string; starts_at: string; location: string | null } | null = null;
+if (identity) {
+	const { results: photos } = await env.DB.prepare(
+		"SELECT r2_key FROM photos WHERE kind = 'image' ORDER BY RANDOM() LIMIT 15",
+	).all<{ r2_key: string }>();
+	urls = photos.map((p) => `/img/${p.r2_key}?w=800`);
+
+	nextEvent = await env.DB.prepare(
+		"SELECT slug, title, starts_at, location FROM events WHERE starts_at >= date('now') ORDER BY starts_at ASC LIMIT 1",
+	).first<{ slug: string; title: string; starts_at: string; location: string | null }>();
+}
+
 const admin = identity ? await isAdmin(identity.memberId) : false;
 const posts = await getRecentPosts(env, identity, 3);
 

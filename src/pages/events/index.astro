@@ -2,6 +2,9 @@
 import Layout from '../../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
 
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+
 const { results: events } = await env.DB.prepare(
 	'SELECT id, slug, title, location, starts_at, ends_at FROM events ORDER BY starts_at DESC',
 ).all<{ id: number; slug: string; title: string; location: string | null; starts_at: string | null; ends_at: string | null }>();

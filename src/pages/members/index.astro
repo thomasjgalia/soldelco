@@ -2,6 +2,9 @@
 import Layout from '../../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
 
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+
 const { results: members } = await env.DB.prepare(
 	"SELECT id, display_name, avatar_key, email, phone, birthday, address FROM members ORDER BY COALESCE(last_name, display_name), COALESCE(first_name, '')",
 ).all<{

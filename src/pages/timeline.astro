@@ -2,6 +2,9 @@
 import Layout from '../layouts/Layout.astro';
 import { env } from 'cloudflare:workers';
 
+const identity = Astro.locals.identity;
+if (!identity) return Astro.redirect(`/whoami?redirect=${encodeURIComponent(Astro.url.pathname)}`);
+
 type AlbumRow = {
 	slug: string;
 	title: string;
