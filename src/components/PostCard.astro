@@ -57,13 +57,24 @@ const { post, identity, admin } = Astro.props;
 						<img src={`/img/${m.r2_key}?w=800`} alt="" class="w-full aspect-square object-cover" loading="lazy" />
 					</button>
 				) : (
-					<video
-					src={`/video/${m.r2_key}`}
-					poster={m.poster_key ? `/img/${m.poster_key}?w=800` : undefined}
-					controls
-					preload="none"
-					class="w-full shrink-0 snap-start aspect-square bg-black object-cover"
-				/>
+					<div class="js-video-wrap relative w-full shrink-0 snap-start">
+						<video
+							class="js-autoplay-video w-full aspect-square bg-black object-cover"
+							muted
+							loop
+							playsinline
+							preload="none"
+							poster={m.poster_key ? `/img/${m.poster_key}?w=800` : undefined}
+							data-src={`/video/${m.r2_key}`}
+						/>
+						<button
+							type="button"
+							class="js-video-mute-toggle absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white"
+							aria-label="Unmute video"
+						>
+							🔇
+						</button>
+					</div>
 				),
 			)}
 		</div>

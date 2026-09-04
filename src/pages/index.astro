@@ -95,6 +95,16 @@ const { results: members } = await env.DB.prepare(
 	<FeedLightbox members={members} identity={identity} />
 </Layout>
 
+<script>
+	import { wireVideoAutoplay } from '../lib/client/videoAutoplay';
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', () => wireVideoAutoplay(document));
+	} else {
+		wireVideoAutoplay(document);
+	}
+</script>
+
 <script define:vars={{ urls }}>
 	if (urls.length > 0) {
 		const imgs = [document.getElementById('carousel-a'), document.getElementById('carousel-b')];

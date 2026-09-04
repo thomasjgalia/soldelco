@@ -41,3 +41,13 @@ const { results: members } = await env.DB.prepare(
 
 	<FeedLightbox members={members} identity={identity} />
 </Layout>
+
+<script>
+	import { wireVideoAutoplay } from '../../lib/client/videoAutoplay';
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', () => wireVideoAutoplay(document));
+	} else {
+		wireVideoAutoplay(document);
+	}
+</script>
